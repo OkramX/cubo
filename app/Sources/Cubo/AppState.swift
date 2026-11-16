@@ -12,6 +12,9 @@ struct ItemEntrada: Codable, Identifiable, Hashable {
     let texto: String
     let quando: Date
     var visto: Bool
+    var conversa: String? = nil
+    var link: String? = nil
+    var idMensagem: String? = nil
 }
 
 private struct Guardado: Codable {
@@ -158,7 +161,8 @@ final class AppState: ObservableObject {
         if info.titulo.isEmpty && info.texto.isEmpty && info.subtitulo.isEmpty { return nil }
         return ItemEntrada(id: "\(r.recID)-\(Int(r.quando.timeIntervalSinceReferenceDate))",
                            bundle: r.bundle, app: nome, titulo: info.titulo,
-                           subtitulo: info.subtitulo, texto: info.texto, quando: r.quando, visto: false)
+                           subtitulo: info.subtitulo, texto: info.texto, quando: r.quando, visto: false,
+                           conversa: info.conversa, link: info.link, idMensagem: info.idMensagem)
     }
 
     private func enviarParaCubo(_ i: ItemEntrada) {
@@ -189,6 +193,12 @@ final class AppState: ObservableObject {
     func apagarVistos() {
         itens.removeAll { $0.visto }
         guardarEntrada()
+    }
+
+    /// Clicar numa notificação: marca como vista e abre o sítio certo na app de origem.
+    func abrirNotificacao(_ i: ItemEntrada) {
+        if !i.visto { marcarVisto(i) }
+        AbrirOrigem.abrir(i) { self.abrirApp(i) }
     }
 
     func abrirApp(_ i: ItemEntrada) {

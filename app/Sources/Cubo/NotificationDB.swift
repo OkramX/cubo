@@ -117,14 +117,31 @@ final class NotificationDB {
 
     private func erroAtual() -> Erro { .semAcesso(db.map { String(cString: sqlite3_errmsg($0)) } ?? "fechada") }
 
-    /// Título, subtítulo e texto da notificação.
-    static func decodificar(_ blob: Data) -> (titulo: String, subtitulo: String, texto: String)? {
+    struct Info {
+        var titulo = "", subtitulo = "", texto = ""
+        var conversa: String?     // identificador da conversa (ex.: WhatsApp "…@s.whatsapp.net")
+        var link: String?         // link direto que a app deixou (ex.: Calendário "ical://…")
+        var idMensagem: String?   // Message-ID de um email ("<…@…>")
+    }
+
+    /// Título, subtítulo, texto e, quando existem, os dados para abrir o sítio certo.
+    static func decodificar(_ blob: Data) -> Info? {
         guard let pl = try? PropertyListSerialization.propertyList(from: blob, format: nil) as? [String: Any]
         else { return nil }
         let req = pl["req"] as? [String: Any] ?? [:]
         func campo(_ k: String) -> String {
             (req[k] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        return (campo("titl"), campo("subt"), campo("body"))
+        var i = Info(titulo: campo("titl"), subtitulo: campo("subt"), texto: campo("body"))
+        if !campo("thre").isEmpty { i.conversa = campo("thre") }
+        if !campo("durl").isEmpty { i.link = campo("durl") }
+        if let usda = req["usda"] as? Data,
+           let arq = try? PropertyListSerialization.propertyList(from: usda, format: nil) as? [String: Any],
+           let objs = arq["$objects"] as? [Any] {
+            for case let s as String in objs {
+                if s.hasPrefix("<"), s.hasSuffix(">"), s.contains("@"), !s.contains(" ") { i.idMensagem = s; break }
+            }
+        }
+        return i
     }
 }

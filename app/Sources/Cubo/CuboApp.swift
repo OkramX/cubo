@@ -218,6 +218,8 @@ struct LinhaItem: View {
         .padding(.horizontal, compacta ? 6 : 0)
         .background(compacta && sobre.v ? Color.primary.opacity(0.06) : .clear, in: RoundedRectangle(cornerRadius: 6))
         .contentShape(Rectangle())
+        .onTapGesture { estado.abrirNotificacao(item) }
+        .help("Abrir em \(item.app) e marcar como visto")
         .onHover { sobre.v = $0 }
         .sheet(isPresented: $criarTarefa.v) { NovaTarefa(item: item) }
     }
