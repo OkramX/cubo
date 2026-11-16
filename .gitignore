@@ -1,0 +1,16 @@
+# Compilações
+app/.build/
+firmware/.pio/
+*.bin
+
+# Assinatura local (chaves e palavra-passe do porta-chaves) — nunca publicar
+app/Assinatura/
+*.keychain-db
+*.p12
+*.pem
+.senha-*
+
+# Atalhos sem assinatura (os assinados ficam)
+*.nao-assinado.shortcut
+
+.DS_Store

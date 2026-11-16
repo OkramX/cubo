@@ -1,0 +1,20 @@
+{
+  "cubo_url": "http://cubo.local",
+  "token": "troca-isto-por-um-codigo-teu",
+  "intervalo_segundos": 2,
+  "todas_as_apps": false,
+  "apps": {
+    "com.apple.mail": "Mail",
+    "com.microsoft.outlook": "Outlook",
+    "com.microsoft.teams2": "Teams",
+    "com.apple.ical": "Calendario",
+    "net.whatsapp.whatsapp": "WhatsApp",
+    "com.tinyspeck.slackmacgap": "Slack",
+    "com.google.chrome": "Chrome"
+  },
+  "apps_ignoradas": [],
+  "mostrar_titulo": true,
+  "mostrar_subtitulo": false,
+  "mostrar_texto": false,
+  "codigos_verificacao": "esconder"
+}
