@@ -25,7 +25,7 @@
 #include "config.h"
 #include "icones.h"
 
-#define FW_VERSAO "1.4.1"
+#define FW_VERSAO "1.5.0"
 
 // ---- Ecrã -------------------------------------------------------------
 Adafruit_ST7789 tft(-1, PIN_TFT_DC, PIN_TFT_RST);   // sem CS
@@ -374,6 +374,114 @@ void desenharIcone(const String& app, int16_t x, int16_t y, uint8_t lado) {
   tft.print(ini);
 }
 
+// =====================================================================
+//  Olhos animados (alternam com as horas)
+// =====================================================================
+const int16_t OLHO_W = 80, OLHO_H = 72, OLHOS_Y = 52;
+const int16_t OLHO_X[2] = {36, 124};
+const uint32_t OLHOS_DURACAO = 6600;
+const uint16_t OLHOS_CORES[] = {0xFEA0, 0x07FF, 0xFB56, 0x87F0, 0xFC60};   // amarelo, ciano, rosa, verde, laranja
+const uint16_t COR_BOCHECHA = 0xFB2C;
+
+bool      olhosLigados = OLHOS_ATIVOS;
+uint32_t  olhosCadaMs = (uint32_t)OLHOS_CADA_SEGUNDOS * 1000UL;
+bool      emOlhos = false;
+uint32_t  olhosDesde = 0, proximosOlhos = 15000, ultimoFrameOlhos = 0;
+uint8_t   corOlhos = 0;
+GFXcanvas16* telaOlho = nullptr;
+
+bool olhosNoEcra() { return emOlhos; }
+
+// Momentos-chave da animação: tempo (ms), altura do olho, olhar x, olhar y, sorriso (0..1)
+struct Pose { uint16_t t; float h, gx, gy, feliz; };
+const Pose POSES[] = {
+  {   0,  4,   0,  0, 0}, { 250,  4,   0,  0, 0}, { 600, 56,   0,  0, 0}, {1500, 56,   0,  0, 0},
+  {1800, 56, -14,  0, 0}, {2500, 56, -14,  0, 0}, {2800, 56,  14, -2, 0}, {3500, 56,  14, -2, 0},
+  {3700, 56,   0,  0, 0}, {3820,  4,   0,  0, 0}, {3950, 56,   0,  0, 0}, {4300, 56,   0,  0, 1},
+  {5300, 56,   0, -3, 1}, {5600, 56,   0,  0, 0}, {5750,  4,   0,  0, 0}, {5900, 56,   0,  0, 0},
+  {6300, 56,   0,  0, 0}, {6550,  4,   0,  0, 0}, {6600,  4,   0,  0, 0},
+};
+
+float suave(float x) { return x * x * (3 - 2 * x); }
+
+Pose poseEm(uint32_t t) {
+  const int n = sizeof(POSES) / sizeof(POSES[0]);
+  if (t >= POSES[n - 1].t) return POSES[n - 1];
+  for (int i = 0; i < n - 1; i++) {
+    if (t < POSES[i + 1].t) {
+      const Pose &a = POSES[i], &b = POSES[i + 1];
+      float k = suave((float)(t - a.t) / (float)(b.t - a.t));
+      return {(uint16_t)t, a.h + (b.h - a.h) * k, a.gx + (b.gx - a.gx) * k,
+              a.gy + (b.gy - a.gy) * k, a.feliz + (b.feliz - a.feliz) * k};
+    }
+  }
+  return POSES[0];
+}
+
+// Desenha um olho na tela (canvas) e copia-a para o ecrã — sem piscar
+void desenharOlho(int lado, const Pose& p, uint16_t cor, uint32_t t) {
+  GFXcanvas16& c = *telaOlho;
+  c.fillScreen(COR_FUNDO);
+  float salto = p.feliz > 0 ? sinf(t / 170.0f) * 2.0f * p.feliz : 0;
+  int16_t h = max(4, (int)p.h);
+  int16_t w = 52 + (56 - h) / 8;                      // ao piscar fica um pouco mais largo
+  int16_t cx = OLHO_W / 2 + (int16_t)p.gx;
+  int16_t cy = OLHO_H / 2 + (int16_t)(p.gy + salto) - 4;
+  int16_t r = min<int16_t>(18, h / 2);
+  c.fillRoundRect(cx - w / 2, cy - h / 2, w, h, r, cor);
+
+  if (h > 24 && p.feliz < 0.5f)                       // brilho no olho
+    c.fillCircle(cx + 11, cy - h / 2 + 13, 6, ST77XX_WHITE);
+
+  if (p.feliz > 0.01f) {                              // olhos sorridentes: um arco "^"
+    int16_t desce = (int16_t)((1.0f - p.feliz) * 34);
+    c.fillCircle(cx, cy + h / 2 + desce, 34, COR_FUNDO);
+    if (p.feliz > 0.3f) {                             // bochechas coradas, do lado de fora
+      int16_t bx = lado == 0 ? cx - 18 : cx + 18;
+      c.fillRoundRect(bx - 9, OLHO_H - 14, 18, 8, 4, COR_BOCHECHA);
+    }
+  }
+  tft.drawRGBBitmap(OLHO_X[lado], OLHOS_Y, c.getBuffer(), OLHO_W, OLHO_H);
+}
+
+void comecarOlhos(uint32_t agora) {
+  telaOlho = new GFXcanvas16(OLHO_W, OLHO_H);
+  if (!telaOlho || !telaOlho->getBuffer()) {           // sem memória: tenta mais tarde
+    delete telaOlho; telaOlho = nullptr;
+    proximosOlhos = agora + olhosCadaMs;
+    return;
+  }
+  emOlhos = true;
+  olhosDesde = agora;
+  ultimoFrameOlhos = 0;
+}
+
+void terminarOlhos(uint32_t agora) {
+  delete telaOlho; telaOlho = nullptr;
+  emOlhos = false;
+  corOlhos = (corOlhos + 1) % (sizeof(OLHOS_CORES) / sizeof(OLHOS_CORES[0]));
+  proximosOlhos = agora + olhosCadaMs;
+  tft.fillRect(0, OLHOS_Y - 2, LARG, OLHO_H + 4, COR_FUNDO);
+  ultimoMinuto = -1;                                  // volta a desenhar as horas
+}
+
+void animarOlhos(uint32_t agora) {
+  if (agora - ultimoFrameOlhos < 33) return;          // ~30 imagens por segundo
+  ultimoFrameOlhos = agora;
+  uint32_t t = agora - olhosDesde;
+  if (t >= OLHOS_DURACAO) { terminarOlhos(agora); return; }
+  if (t < 250) {                                      // pálpebras a fechar sobre as horas
+    int16_t k = (int16_t)(t * 30 / 250);
+    tft.fillRect(0, 60, LARG, k, COR_FUNDO);
+    tft.fillRect(0, 120 - k, LARG, k, COR_FUNDO);
+    return;
+  }
+  Pose p = poseEm(t);
+  uint16_t cor = OLHOS_CORES[corOlhos];
+  desenharOlho(0, p, cor, t);
+  desenharOlho(1, p, cor, t);
+}
+
 void desenharRelogio(bool tudo) {
   if (tudo) tft.fillScreen(COR_FUNDO);
 
@@ -386,7 +494,7 @@ void desenharRelogio(bool tudo) {
   char hhmm[6];
   if (ok) snprintf(hhmm, sizeof(hhmm), "%02d:%02d", t.tm_hour, t.tm_min);
   else    strcpy(hhmm, "--:--");
-  centrado(hhmm, 62, 7, COR_TEXTO, COR_FUNDO);
+  if (!olhosNoEcra()) centrado(hhmm, 62, 7, COR_TEXTO, COR_FUNDO);
 
   // Data
   tft.fillRect(0, 128, LARG, 20, COR_FUNDO);
@@ -500,12 +608,16 @@ void atualizarEcra() {
 
   if (ecra == ECRA_RELOGIO) {
     if (filaTam > 0) {
+      if (emOlhos) terminarOlhos(agora);
       ecra = ECRA_ALERTA;
       alertaDesde = agora;
       desenharAlerta(fila[filaInicio]);
       return;
     }
     definirBrilho(brilhoAlvo());
+
+    if (emOlhos) animarOlhos(agora);
+    else if (olhosLigados && horaValida() && (int32_t)(agora - proximosOlhos) >= 0) comecarOlhos(agora);
 
     bool wifiOk = WiFi.status() == WL_CONNECTED;
     time_t t = time(nullptr);
@@ -659,6 +771,19 @@ void handleToken() {
   ESP.restart();
 }
 
+// Liga/desliga os olhos e muda o intervalo: POST /olhos {"ativo":true,"cada":20}
+void handleOlhos() {
+  if (!autorizado()) return;
+  JsonDocument doc;
+  deserializeJson(doc, server.arg("plain"));
+  if (doc["ativo"].is<bool>()) olhosLigados = doc["ativo"];
+  if (doc["cada"].is<int>()) olhosCadaMs = (uint32_t)constrain((int)doc["cada"], 5, 3600) * 1000UL;
+  if (!olhosLigados && emOlhos) terminarOlhos(millis());
+  proximosOlhos = millis() + 2000;
+  server.send(200, "application/json", String("{\"ok\":true,\"ativo\":") + (olhosLigados ? "true" : "false") +
+              ",\"cada\":" + String(olhosCadaMs / 1000) + "}");
+}
+
 void handleEsquecerWifi() {
   if (!autorizado()) return;
   server.send(200, "application/json", "{\"ok\":true}");
@@ -764,6 +889,7 @@ void setup() {
   server.on("/redes", HTTP_POST, handleRedeNova);
   server.on("/redes/apagar", HTTP_POST, handleRedeApagar);
   server.on("/token", HTTP_POST, handleToken);
+  server.on("/olhos", HTTP_POST, handleOlhos);
   httpUpdater.setup(&server, "/update", "admin", token);
   server.begin();
 

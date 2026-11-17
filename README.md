@@ -47,8 +47,10 @@ Atualizar sem cabo:
 curl -u admin:<token> -F firmware=@.pio/build/cubo_4mb/firmware.bin http://<ip-do-cubo>/update
 ```
 
-Endpoints: `POST /notify`, `/limpar`, `/brilho`, `/resumo`, `GET|POST /redes`, `/redes/apagar`, `/token`, `GET /estado`. Todos os POST pedem o cabeçalho `X-Token`.
+Endpoints: `POST /notify`, `/limpar`, `/brilho`, `/resumo`, `GET|POST /redes`, `/redes/apagar`, `/token`, `/olhos`, `GET /estado`. Todos os POST pedem o cabeçalho `X-Token`.
 
 **Código secreto:** o `CUBO_TOKEN` do `config.h` é só o valor de fábrica. Troca-o logo no portal `Cubo-Setup` ou com `POST /token` (`{"novo": "..."}`, 8–64 caracteres); fica guardado no cubo e tem de ser igual ao `token` do `config.json` da app.
+
+No relógio, as horas alternam com uns olhos animados e coloridos (pré-visualização em `firmware/olhos-preview.gif`); `POST /olhos {"ativo":true,"cada":20}` liga/desliga e muda o intervalo, e `OLHOS_CADA_SEGUNDOS` no `config.h` define o valor de arranque.
 
 O cubo guarda até 6 redes Wi-Fi e liga-se à conhecida com melhor sinal; se não encontrar nenhuma, cria a rede `Cubo-Setup`.

@@ -47,6 +47,10 @@
 // (0 = só volta a zero com o comando --limpar do script)
 #define NAO_LIDAS_RESET_MIN 60
 
+// Olhos animados que alternam com as horas no relógio
+#define OLHOS_ATIVOS        1      // 0 = só as horas
+#define OLHOS_CADA_SEGUNDOS 20     // segundos de horas entre cada aparição dos olhos
+
 // Brilho em percentagem e horário noturno (horas inteiras, 0-23)
 #define BRILHO_DIA        100
 #define BRILHO_NOITE      10
