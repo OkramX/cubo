@@ -19,6 +19,7 @@ struct CuboConfig {
             "net.whatsapp.whatsapp": "WhatsApp",
             "com.tinyspeck.slackmacgap": "Slack",
             "com.google.chrome": "Chrome",
+            "com.hnc.discord": "Discord",
         ],
         "apps_ignoradas": [String](),
         "mostrar_titulo": true,

@@ -25,7 +25,7 @@
 #include "config.h"
 #include "icones.h"
 
-#define FW_VERSAO "1.5.0"
+#define FW_VERSAO "1.5.1"
 
 // ---- Ecrã -------------------------------------------------------------
 Adafruit_ST7789 tft(-1, PIN_TFT_DC, PIN_TFT_RST);   // sem CS
