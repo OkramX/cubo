@@ -171,8 +171,14 @@ bool esquecerRede(const String& ssid) {
   return false;
 }
 
-// Explica em português porque é que a ligação falhou
+// Explica em português porque é que a ligação falhou (estado do ESP e motivo dado pelo router)
+uint8_t ultimoMotivoWifi = 0;
 const char* motivoWifi(uint8_t s) {
+  switch (ultimoMotivoWifi) {
+    case 15: case 204: case 23: return "palavra-passe\nerrada";
+    case 2: case 202: case 203: return "o router nao\naceita o cubo\n(filtro de MAC?)";
+    case 201:                   return "rede nao encontrada\n(so 2,4 GHz)";
+  }
   switch (s) {
     case WL_NO_SSID_AVAIL:  return "rede nao encontrada\n(so 2,4 GHz)";
     case WL_WRONG_PASSWORD: return "palavra-passe\nerrada";
@@ -184,6 +190,22 @@ const char* motivoWifi(uint8_t s) {
 // Liga a uma rede; se falhar, tenta outra vez em modo 802.11g, que alguns
 // routers Wi-Fi 6 (802.11ax) aceitam melhor do ESP8266
 bool ligarA(const String& ssid, const String& senha, uint32_t esperaMs) {
+  static WiFiEventHandler aoDesligar = WiFi.onStationModeDisconnected([](const WiFiEventStationModeDisconnected& e) {
+    ultimoMotivoWifi = e.reason;
+    Serial.printf("  router desligou: motivo %d\n", e.reason);
+  });
+  Serial.printf("  palavra-passe com %d caracteres\n", senha.length());
+  WiFi.mode(WIFI_STA);
+  int n = WiFi.scanNetworks(false, true);
+  bool visivel = false;
+  for (int i = 0; i < n; i++) {
+    if (WiFi.SSID(i) == ssid) {
+      visivel = true;
+      Serial.printf("  vejo '%s' canal %d sinal %d dBm cifra %d\n", ssid.c_str(), WiFi.channel(i), WiFi.RSSI(i), WiFi.encryptionType(i));
+    }
+  }
+  if (!visivel) Serial.printf("  nao vejo '%s' (%d redes a volta)\n", ssid.c_str(), n);
+  WiFi.scanDelete();
   for (uint8_t modo = 0; modo < 2; modo++) {
     WiFi.setPhyMode(modo == 0 ? WIFI_PHY_MODE_11N : WIFI_PHY_MODE_11G);
     WiFi.begin(ssid.c_str(), senha.c_str());
@@ -192,6 +214,7 @@ bool ligarA(const String& ssid, const String& senha, uint32_t esperaMs) {
       if (WiFi.status() == WL_WRONG_PASSWORD) return false;   // nao adianta insistir
       delay(200);
     }
+    Serial.printf("Wi-Fi '%s' modo %s: estado %d\n", ssid.c_str(), modo == 0 ? "11n" : "11g", WiFi.status());
     if (WiFi.status() == WL_CONNECTED) return true;
     WiFi.disconnect();
     delay(300);
@@ -892,9 +915,13 @@ void setup() {
     mostrarMensagem("Configurar Wi-Fi", "Liga-te a rede\n" CUBO_AP_NOME "\ne abre\n192.168.4.1");
   });
   bool ligado = ligarRedeConhecida();
+  if (!ligado && wm.getWiFiSSID().length()) {   // a última rede escrita no portal
+    mostrarMensagem("A ligar...", wm.getWiFiSSID());
+    ligado = ligarA(wm.getWiFiSSID(), wm.getWiFiPass(), 20000);
+  }
   for (uint8_t volta = 0; !ligado && volta < 6; volta++) {
     tentouRede = false;
-    ligado = volta == 0 ? wm.autoConnect(CUBO_AP_NOME) : wm.startConfigPortal(CUBO_AP_NOME);
+    ligado = wm.startConfigPortal(CUBO_AP_NOME);
     ligado = ligado && WiFi.status() == WL_CONNECTED;
     if (ligado || !tentouRede) break;   // ligou, ou o portal fechou por tempo
     // falhou: tenta a mesma rede em modo compatível antes de voltar a pedir
@@ -905,7 +932,7 @@ void setup() {
     ligado = ligarA(ssid, senha, 25000);
     if (!ligado) {
       if (WiFi.status() == WL_WRONG_PASSWORD) motivo = WL_WRONG_PASSWORD;
-      mostrarMensagem("Nao ligou", String(motivoWifi(motivo)) + "\n\nvolta a tentar");
+      mostrarMensagem("Nao ligou", String(motivoWifi(motivo)) + "\nMAC " + WiFi.macAddress());
       delay(6000);
     }
   }
