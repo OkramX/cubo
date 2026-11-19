@@ -25,7 +25,7 @@
 #include "config.h"
 #include "icones.h"
 
-#define FW_VERSAO "1.5.1"
+#define FW_VERSAO "1.5.2"
 
 // ---- Ecrã -------------------------------------------------------------
 Adafruit_ST7789 tft(-1, PIN_TFT_DC, PIN_TFT_RST);   // sem CS
@@ -171,6 +171,34 @@ bool esquecerRede(const String& ssid) {
   return false;
 }
 
+// Explica em português porque é que a ligação falhou
+const char* motivoWifi(uint8_t s) {
+  switch (s) {
+    case WL_NO_SSID_AVAIL:  return "rede nao encontrada\n(so 2,4 GHz)";
+    case WL_WRONG_PASSWORD: return "palavra-passe\nerrada";
+    case WL_CONNECT_FAILED: return "o router\nrecusou a ligacao";
+    default:                return "o router\nnao respondeu";
+  }
+}
+
+// Liga a uma rede; se falhar, tenta outra vez em modo 802.11g, que alguns
+// routers Wi-Fi 6 (802.11ax) aceitam melhor do ESP8266
+bool ligarA(const String& ssid, const String& senha, uint32_t esperaMs) {
+  for (uint8_t modo = 0; modo < 2; modo++) {
+    WiFi.setPhyMode(modo == 0 ? WIFI_PHY_MODE_11N : WIFI_PHY_MODE_11G);
+    WiFi.begin(ssid.c_str(), senha.c_str());
+    uint32_t t0 = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - t0 < esperaMs) {
+      if (WiFi.status() == WL_WRONG_PASSWORD) return false;   // nao adianta insistir
+      delay(200);
+    }
+    if (WiFi.status() == WL_CONNECTED) return true;
+    WiFi.disconnect();
+    delay(300);
+  }
+  return false;
+}
+
 // Procura as redes à volta e liga-se à conhecida com melhor sinal
 bool ligarRedeConhecida(uint32_t esperaMs = 15000) {
   if (nRedes == 0) return false;
@@ -184,10 +212,7 @@ bool ligarRedeConhecida(uint32_t esperaMs = 15000) {
   }
   WiFi.scanDelete();
   if (melhor < 0) return false;
-  WiFi.begin(redes[melhor].ssid.c_str(), redes[melhor].senha.c_str());
-  uint32_t t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t0 < esperaMs) delay(200);
-  return WiFi.status() == WL_CONNECTED;
+  return ligarA(redes[melhor].ssid, redes[melhor].senha, esperaMs);
 }
 
 // =====================================================================
@@ -854,11 +879,37 @@ void setup() {
   wm.setSaveConfigCallback([]() { guardarParametros = true; });
   wm.setHostname(CUBO_HOSTNAME);
   wm.setConfigPortalTimeout(300);
+  wm.setConnectTimeout(25);
+  wm.setSaveConnectTimeout(30);
+  wm.setConnectRetries(2);
+  wm.setBreakAfterConfig(true);        // se a ligação falhar, voltamos aqui para explicar e tentar de novo
+  static bool tentouRede = false;
+  wm.setPreSaveConfigCallback([]() {
+    tentouRede = true;
+    mostrarMensagem("A ligar...", "a experimentar\na rede escolhida");
+  });
   wm.setAPCallback([](WiFiManager*) {
     mostrarMensagem("Configurar Wi-Fi", "Liga-te a rede\n" CUBO_AP_NOME "\ne abre\n192.168.4.1");
   });
   bool ligado = ligarRedeConhecida();
-  if (!ligado && !wm.autoConnect(CUBO_AP_NOME)) {
+  for (uint8_t volta = 0; !ligado && volta < 6; volta++) {
+    tentouRede = false;
+    ligado = volta == 0 ? wm.autoConnect(CUBO_AP_NOME) : wm.startConfigPortal(CUBO_AP_NOME);
+    ligado = ligado && WiFi.status() == WL_CONNECTED;
+    if (ligado || !tentouRede) break;   // ligou, ou o portal fechou por tempo
+    // falhou: tenta a mesma rede em modo compatível antes de voltar a pedir
+    String ssid = wm.getWiFiSSID(), senha = wm.getWiFiPass();
+    uint8_t motivo = WiFi.status();
+    mostrarMensagem("A tentar de novo", "modo compativel\n" + ssid);
+    WiFi.softAPdisconnect(true);
+    ligado = ligarA(ssid, senha, 25000);
+    if (!ligado) {
+      if (WiFi.status() == WL_WRONG_PASSWORD) motivo = WL_WRONG_PASSWORD;
+      mostrarMensagem("Nao ligou", String(motivoWifi(motivo)) + "\n\nvolta a tentar");
+      delay(6000);
+    }
+  }
+  if (!ligado) {
     mostrarMensagem("Sem Wi-Fi", "a reiniciar...");
     delay(2000);
     ESP.restart();
