@@ -25,7 +25,7 @@
 #include "config.h"
 #include "icones.h"
 
-#define FW_VERSAO "1.6.1"
+#define FW_VERSAO "1.7.0"
 
 // ---- Ecrã -------------------------------------------------------------
 Adafruit_ST7789 tft(-1, PIN_TFT_DC, PIN_TFT_RST);   // sem CS
@@ -60,6 +60,10 @@ struct Resumo {
   uint32_t inicio = 0, fim = 0;   // hora Unix
   int      tarefas = -1;      // tarefas por fazer hoje (-1 = desconhecido)
   uint32_t focoAte = 0;      // modo Concentração até esta hora Unix (0 = desligado)
+  uint32_t focoDesde = 0;    // quando começou (para o anel)
+  String   treino, forma;    // treino planeado para hoje e forma (vindos da OkramX)
+  String   tempo;            // ex.: "18C  12/21"
+  String   tempoIcone;       // sol, lua, nuvem, chuva, trovoada, neve, nevoeiro
   uint32_t recebidoMs = 0;
   bool     valido = false;
 } resumo;
@@ -75,6 +79,8 @@ bool     ultimoWifiOk = true;
 uint32_t ultimoCaboMs = 0;          // último pedido recebido pelo cabo USB
 bool caboAtivo() { return ultimoCaboMs && millis() - ultimoCaboMs < 120000UL; }
 void servirSerie();
+void desenharTempo(const String& ic, int16_t x, int16_t y);
+void desenharLinhaTreino();
 void atualizarEcra();
 bool noArranque = true;             // durante o arranque, um pedido pelo cabo interrompe as tentativas de Wi-Fi
 String   token = CUBO_TOKEN;           // pode ser mudado no portal de configuração
@@ -638,6 +644,161 @@ void desenharRelogio(bool tudo) {
     tft.print(s);
     tft.setTextColor(COR_DESTAQUE, COR_FUNDO);
     tft.print(extra);
+  } else if (resumoAtivo()) {
+    if (resumo.tempo.length()) {
+      desenharTempo(resumo.tempoIcone, 14, 184);
+      tft.setTextSize(2);
+      tft.setTextColor(COR_TEXTO, COR_FUNDO);
+      tft.setCursor(48, 190);
+      tft.print(resumo.tempo);
+    }
+    desenharLinhaTreino();
+  }
+}
+
+// Linha do treino (alterna com a forma de 8 em 8 s)
+void desenharLinhaTreino() {
+  if (!resumoAtivo() || (!resumo.treino.length() && !resumo.forma.length())) return;
+  bool mostrarForma = resumo.forma.length() && (!resumo.treino.length() || (millis() / 8000) % 2);
+  String s = mostrarForma ? resumo.forma : resumo.treino;
+  const int maxChars = (LARG - 40) / 12;
+  if ((int)s.length() > maxChars) s = s.substring(0, maxChars - 1) + ".";
+  tft.fillRect(0, 210, LARG, 20, COR_FUNDO);
+  // bicicleta pequena
+  tft.drawCircle(14, 220, 6, 0x2FE5);
+  tft.drawCircle(32, 220, 6, 0x2FE5);
+  tft.drawLine(14, 220, 22, 212, 0x2FE5);
+  tft.drawLine(22, 212, 32, 220, 0x2FE5);
+  tft.drawLine(22, 212, 18, 220, 0x2FE5);
+  tft.setTextSize(2);
+  tft.setTextColor(mostrarForma ? COR_SUAVE : 0x2FE5, COR_FUNDO);
+  tft.setCursor(44, 213);
+  tft.print(s);
+}
+
+// Ícone do tempo (28x28) desenhado com formas simples
+void nuvem(int16_t x, int16_t y, uint16_t cor) {
+  tft.fillCircle(x + 9, y + 15, 7, cor);
+  tft.fillCircle(x + 17, y + 11, 9, cor);
+  tft.fillCircle(x + 23, y + 17, 5, cor);
+  tft.fillRect(x + 6, y + 15, 20, 7, cor);
+}
+void desenharTempo(const String& ic, int16_t x, int16_t y) {
+  tft.fillRect(x, y, 30, 30, COR_FUNDO);
+  const uint16_t AMARELO = 0xFEA0, CINZA = 0xBDF7, AZUL = 0x5D9F;
+  if (ic == "sol") {
+    tft.fillCircle(x + 14, y + 14, 7, AMARELO);
+    for (int a = 0; a < 360; a += 45) {
+      float r = a * 0.0174533f;
+      tft.drawLine(x + 14 + cosf(r) * 10, y + 14 + sinf(r) * 10, x + 14 + cosf(r) * 13, y + 14 + sinf(r) * 13, AMARELO);
+    }
+  } else if (ic == "lua") {
+    tft.fillCircle(x + 14, y + 14, 9, AMARELO);
+    tft.fillCircle(x + 19, y + 10, 8, COR_FUNDO);
+  } else if (ic == "pouco") {
+    tft.fillCircle(x + 10, y + 9, 7, AMARELO);
+    nuvem(x + 2, y + 4, CINZA);
+  } else if (ic == "chuva") {
+    nuvem(x, y - 2, CINZA);
+    for (int i = 0; i < 3; i++) tft.drawLine(x + 8 + i * 7, y + 22, x + 5 + i * 7, y + 28, AZUL);
+  } else if (ic == "trovoada") {
+    nuvem(x, y - 2, 0x7BEF);
+    tft.drawLine(x + 15, y + 20, x + 11, y + 25, AMARELO);
+    tft.drawLine(x + 11, y + 25, x + 16, y + 25, AMARELO);
+    tft.drawLine(x + 16, y + 25, x + 12, y + 30, AMARELO);
+  } else if (ic == "neve") {
+    nuvem(x, y - 2, CINZA);
+    for (int i = 0; i < 3; i++) tft.fillCircle(x + 8 + i * 7, y + 25, 2, COR_TEXTO);
+  } else if (ic == "nevoeiro") {
+    for (int i = 0; i < 4; i++) tft.drawFastHLine(x + 3 + (i % 2) * 3, y + 7 + i * 6, 22, CINZA);
+  } else if (ic.length()) {
+    nuvem(x, y + 2, CINZA);
+  }
+}
+
+// =====================================================================
+//  Anel: contagem para a reunião e tempo de Concentração
+// =====================================================================
+enum ModoAnel { ANEL_NENHUM, ANEL_REUNIAO, ANEL_FOCO };
+const int16_t ANEL_CX = 120, ANEL_CY = 112, ANEL_RE = 82, ANEL_RI = 70;
+const uint16_t COR_ANEL_FUNDO = 0x2124;
+
+ModoAnel modoAnel() {
+  if (!resumoAtivo() || !horaValida()) return ANEL_NENHUM;
+  uint32_t agora = (uint32_t)time(nullptr);
+  if (resumo.evento.length() && resumo.inicio > agora && resumo.inicio - agora <= 600) return ANEL_REUNIAO;
+  if (resumo.focoAte > agora) return ANEL_FOCO;
+  return ANEL_NENHUM;
+}
+
+// Pinta o anel entre os ângulos a0 e a1 (graus, 0 = em cima, sentido dos ponteiros)
+void arco(float a0, float a1, uint16_t cor) {
+  for (float a = a0; a < a1; a += 0.6f) {
+    float r = (a - 90.0f) * 0.0174533f, c = cosf(r), s = sinf(r);
+    tft.drawLine(ANEL_CX + c * ANEL_RI, ANEL_CY + s * ANEL_RI, ANEL_CX + c * ANEL_RE, ANEL_CY + s * ANEL_RE, cor);
+  }
+}
+
+void desenharAnel(ModoAnel modo, bool tudo) {
+  static float anguloAntes = 0;
+  static uint16_t corAntes = 0;
+  static int restanteAntes = -1;
+  static String rotuloAntes;
+  uint32_t agora = (uint32_t)time(nullptr);
+  uint32_t total, restante;
+  uint16_t cor;
+  String rotulo;
+  if (modo == ANEL_REUNIAO) {
+    total = 600;
+    restante = resumo.inicio - agora;
+    bool pisca = restante <= 60 && (agora % 2);
+    cor = restante > 300 ? 0x2FE5 : restante > 60 ? 0xFC60 : (pisca ? 0x6000 : 0xF800);
+    rotulo = resumo.evento;
+  } else {
+    restante = resumo.focoAte - agora;
+    total = resumo.focoDesde && resumo.focoDesde < resumo.focoAte ? resumo.focoAte - resumo.focoDesde : max<uint32_t>(restante, 3600);
+    cor = 0x5D9F;
+    rotulo = "Concentracao";
+  }
+  if (restante > total) restante = total;
+  float angulo = 360.0f * restante / total;
+
+  if (tudo) {
+    tft.fillScreen(COR_FUNDO);
+    anguloAntes = 0; corAntes = 0; restanteAntes = -1; rotuloAntes = "";
+  }
+  if (cor != corAntes || angulo > anguloAntes + 0.5f) {
+    arco(0, angulo, cor);
+    arco(angulo, 360, COR_ANEL_FUNDO);
+  } else if (angulo < anguloAntes) {
+    arco(angulo, anguloAntes + 0.6f, COR_ANEL_FUNDO);
+  }
+  anguloAntes = angulo;
+  corAntes = cor;
+
+  // número ao centro: minutos (ou segundos no último minuto da reunião)
+  bool segundos = modo == ANEL_REUNIAO && restante < 60;
+  int valor = segundos ? restante : (restante + 59) / 60;
+  if (valor != restanteAntes || tudo) {
+    restanteAntes = valor;
+    tft.fillRect(ANEL_CX - 62, ANEL_CY - 34, 124, 70, COR_FUNDO);
+    centrado(String(valor), ANEL_CY - 30, valor >= 100 ? 5 : 6, COR_TEXTO, COR_FUNDO);
+    centrado(segundos ? "seg" : "min", ANEL_CY + 20, 2, COR_SUAVE, COR_FUNDO);
+  }
+
+  // hora atual em cima e nome em baixo
+  time_t ta = agora;
+  struct tm tmv;
+  localtime_r(&ta, &tmv);
+  char hhmm[6];
+  snprintf(hhmm, sizeof(hhmm), "%02d:%02d", tmv.tm_hour, tmv.tm_min);
+  centrado(hhmm, 8, 2, COR_SUAVE, COR_FUNDO);
+  if (rotulo != rotuloAntes) {
+    rotuloAntes = rotulo;
+    tft.fillRect(0, 204, LARG, 20, COR_FUNDO);
+    const int maxChars = LARG / 12;
+    if ((int)rotulo.length() > maxChars) rotulo = rotulo.substring(0, maxChars - 1) + ".";
+    centrado(rotulo, 206, 2, modo == ANEL_REUNIAO ? COR_TEXTO : 0x5D9F, COR_FUNDO);
   }
 }
 
@@ -687,8 +848,36 @@ void atualizarEcra() {
     }
     definirBrilho(brilhoAlvo());
 
+    // Contagem para a reunião / Concentração: o anel substitui o relógio
+    static ModoAnel anelAntes = ANEL_NENHUM;
+    static uint32_t segundoAnel = 0;
+    ModoAnel anel = modoAnel();
+    if (anel != ANEL_NENHUM) {
+      if (emOlhos) terminarOlhos(agora);
+      uint32_t s = (uint32_t)time(nullptr);
+      if (anel != anelAntes || redesenharTudo || s != segundoAnel) {
+        desenharAnel(anel, anel != anelAntes || redesenharTudo);
+        redesenharTudo = false;
+        segundoAnel = s;
+      }
+      anelAntes = anel;
+      return;
+    }
+    if (anelAntes != ANEL_NENHUM) {          // acabou: volta ao relógio com os olhos a sorrir
+      anelAntes = ANEL_NENHUM;
+      redesenharTudo = true;
+      proximosOlhos = olhosLigados ? agora : 1;   // 1 = olhos uma vez, mesmo desligados
+    }
+    // a linha do treino alterna com a forma
+    static uint32_t trocaTreino = 0;
+    if (!emOlhos && naoLidas == 0 && resumoAtivo() && resumo.forma.length() && resumo.treino.length() &&
+        agora / 8000 != trocaTreino) {
+      trocaTreino = agora / 8000;
+      desenharLinhaTreino();
+    }
+
     if (emOlhos) animarOlhos(agora);
-    else if (olhosLigados && horaValida() && (int32_t)(agora - proximosOlhos) >= 0) comecarOlhos(agora);
+    else if (horaValida() && (int32_t)(agora - proximosOlhos) >= 0 && (olhosLigados || proximosOlhos == 1)) comecarOlhos(agora);
 
     bool wifiOk = WiFi.status() == WL_CONNECTED || caboAtivo();
     time_t t = time(nullptr);
@@ -784,6 +973,11 @@ void handleResumo() {
   resumo.fim        = doc["fim"] | 0;
   resumo.tarefas    = doc["tarefas"] | -1;
   resumo.focoAte    = doc["foco_ate"] | 0;
+  resumo.focoDesde  = doc["foco_desde"] | 0;
+  resumo.treino     = paraAscii(String((const char*)(doc["treino"] | ""))).substring(0, 40);
+  resumo.forma      = paraAscii(String((const char*)(doc["forma"] | ""))).substring(0, 40);
+  resumo.tempo      = paraAscii(String((const char*)(doc["tempo"] | ""))).substring(0, 16);
+  resumo.tempoIcone = String((const char*)(doc["tempo_icone"] | ""));
   resumo.recebidoMs = millis();
   resumo.valido     = true;
   ultimoMinuto = -1;   // redesenha só as linhas do relógio, sem piscar o ecrã

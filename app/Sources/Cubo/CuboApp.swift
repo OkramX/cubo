@@ -28,6 +28,10 @@ struct CuboApp: App {
         let e = estado, a = agenda
         a.cubo = { e.cubo }
         a.focoAte = { e.focoAte }
+        a.focoDesde = { e.focoDesde }
+        Extras.shared.aoMudar = { a.enviarResumo() }
+        Pausa.shared.podeAvisar = { e.config.pausa && !e.emFoco }
+        Pausa.shared.enviar = { dados in let c = e.cubo; Task { await c.notificar(dados) } }
         e.aoMudarFoco = { a.enviarResumo() }
         AtalhosGlobais.registar(abrir: { e.abrirJanela?() }, foco: { e.alternarFoco() })
         a.enviarResumo()

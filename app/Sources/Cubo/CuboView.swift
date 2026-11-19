@@ -12,6 +12,9 @@ struct CuboView: View {
     @StateObject private var novaRede = Caixa("")
     @StateObject private var novaSenha = Caixa("")
     @StateObject private var erroRede = Caixa<String?>(nil)
+    @StateObject private var extras = Extras.shared
+    @StateObject private var cidade = Caixa(Extras.shared.cidade)
+    @StateObject private var erroCidade = Caixa(false)
 
     var body: some View {
         Form {
@@ -100,6 +103,22 @@ struct CuboView: View {
                 Text("O cubo liga-se sozinho à rede conhecida com melhor sinal (até 6). Antes de o levares para outro sítio, acrescenta aqui a rede de lá. Se não conhecer nenhuma, cria a rede \"Cubo-Setup\" para o configurares. A app encontra o cubo sozinha em qualquer rede.")
             }
 
+            Section {
+                LabeledContent("Treino de hoje", value: extras.treino.isEmpty ? "—" : extras.treino)
+                LabeledContent("Forma", value: extras.forma.isEmpty ? "—" : extras.forma)
+                LabeledContent("Tempo em \(extras.cidade)", value: extras.tempo.isEmpty ? "—" : extras.tempo)
+                HStack {
+                    TextField("Cidade", text: $cidade.v)
+                    Button("Mudar") {
+                        Task { erroCidade.v = !(await extras.mudarCidade(cidade.v)) }
+                    }
+                    Button { Task { await extras.atualizar() } } label: { Image(systemName: "arrow.clockwise") }
+                }
+                if erroCidade.v { Text("Não encontrei essa cidade.").foregroundStyle(.red).font(.caption) }
+            } header: { Text("Relógio do cubo") } footer: {
+                Text("O treino e a forma vêm da OkramX; o tempo do Open-Meteo. Antes de cada reunião o cubo mostra uma contagem de 10 min, e durante a Concentração um anel com o tempo que falta.")
+            }
+
             Section("Brilho") {
                 Toggle("Automático (dia e noite)", isOn: $brilhoAuto.v)
                     .onChange(of: brilhoAuto.v) { _, auto in
@@ -120,7 +139,8 @@ struct CuboView: View {
                     Spacer()
                     Button("Ouvir") { Som.tocar() }
                 }
-            } header: { Text("Som") } footer: {
+                Toggle("Lembrar uma pausa a cada 50 min ao computador", isOn: liga(\.pausa))
+            } header: { Text("Som e pausas") } footer: {
                 Text("Toca mesmo com o Mac em silêncio. Durante a Concentração só toca para as pessoas prioritárias.")
             }
 

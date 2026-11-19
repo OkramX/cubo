@@ -18,6 +18,7 @@ final class Agenda: ObservableObject {
     private var ultimoEnvioResumo = Date.distantPast
     var cubo: () -> CubeClient = { CubeClient(base: "", token: "") }
     var focoAte: () -> Date? = { nil }
+    var focoDesde: () -> Date? = { nil }
 
     init() {
         NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: store, queue: .main) { [weak self] _ in
@@ -105,7 +106,15 @@ final class Agenda: ObservableObject {
     /// Envia só quando muda, ou a cada 10 min para o cubo saber que o Mac continua ligado.
     func enviarResumo() {
         var dados: [String: AnyHashable] = ["tarefas": acessoLembretes ? tarefasHoje.count : -1]
-        if let f = focoAte(), f > Date() { dados["foco_ate"] = Int(f.timeIntervalSince1970) }
+        if let f = focoAte(), f > Date() {
+            dados["foco_ate"] = Int(f.timeIntervalSince1970)
+            if let d = focoDesde() { dados["foco_desde"] = Int(d.timeIntervalSince1970) }
+        }
+        let x = Extras.shared
+        dados["treino"] = Preparar.ascii(x.treino)
+        dados["forma"] = x.forma
+        dados["tempo"] = x.tempo
+        dados["tempo_icone"] = x.tempoIcone
         if let e = proximo {
             dados["evento"] = Preparar.ascii(e.title ?? "Evento")
             dados["inicio"] = Int(e.startDate.timeIntervalSince1970)

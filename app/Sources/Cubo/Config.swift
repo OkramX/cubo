@@ -80,6 +80,10 @@ struct CuboConfig {
         get { raw["pessoas_prioritarias"] as? [String] ?? [] }
         set { raw["pessoas_prioritarias"] = newValue }
     }
+    var pausa: Bool {
+        get { raw["lembrete_pausa"] as? Bool ?? true }
+        set { raw["lembrete_pausa"] = newValue }
+    }
     var som: Bool {
         get { raw["som"] as? Bool ?? true }
         set { raw["som"] = newValue }

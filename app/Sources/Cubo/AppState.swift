@@ -37,7 +37,7 @@ final class AppState: ObservableObject {
     @Published var focoAte: Date? = UserDefaults.standard.object(forKey: "focoAte") as? Date {
         didSet { UserDefaults.standard.set(focoAte, forKey: "focoAte"); aoMudarFoco?() }
     }
-    private var focoDesde: Date? = UserDefaults.standard.object(forKey: "focoDesde") as? Date {
+    private(set) var focoDesde: Date? = UserDefaults.standard.object(forKey: "focoDesde") as? Date {
         didSet { UserDefaults.standard.set(focoDesde, forKey: "focoDesde") }
     }
     var aoMudarFoco: (() -> Void)?
