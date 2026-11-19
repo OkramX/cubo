@@ -140,12 +140,15 @@ final class AppState: ObservableObject {
             if atual < ultimo { ultimo = atual }   // o macOS limpou a base de dados
             let novos = try bd.registos(depoisDe: ultimo)
             guard !novos.isEmpty else { return }
+            var tocar = false
             for r in novos {
                 ultimo = max(ultimo, r.recID)
                 guard let i = item(de: r) else { continue }
                 itens.insert(i, at: 0)
                 enviarParaCubo(i)
+                if !emFoco || prioritaria(i) { tocar = true }
             }
+            if tocar && config.som { Som.tocar() }
             appsConhecidas = bd.appsComNotificacoes()
             guardarEntrada()
         } catch {

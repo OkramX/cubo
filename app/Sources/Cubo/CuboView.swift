@@ -114,6 +114,16 @@ struct CuboView: View {
                 }
             }
 
+            Section {
+                HStack {
+                    Toggle("Tocar um som quando entra uma notificação", isOn: liga(\.som))
+                    Spacer()
+                    Button("Ouvir") { Som.tocar() }
+                }
+            } header: { Text("Som") } footer: {
+                Text("Toca mesmo com o Mac em silêncio. Durante a Concentração só toca para as pessoas prioritárias.")
+            }
+
             Section("O que aparece no cubo") {
                 Toggle("Remetente", isOn: liga(\.mostrarTitulo))
                 Toggle("Assunto", isOn: liga(\.mostrarSubtitulo))
