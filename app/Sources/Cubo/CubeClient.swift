@@ -7,9 +7,11 @@ struct EstadoCubo: Decodable {
     let nao_lidas: Int
     let hora_ok: Bool
     let uptime_s: Int
+    let cabo: Bool?     // a resposta veio pelo cabo USB
+    let wifi: Bool?
 }
 
-/// Comunicação HTTP com o cubo.
+/// Comunicação com o cubo: pelo cabo USB quando está ligado ao Mac, senão por Wi-Fi (HTTP).
 struct CubeClient {
     let base: String
     let token: String
@@ -28,8 +30,21 @@ struct CubeClient {
         return r
     }
 
+    /// Tenta primeiro o cabo USB; "/brilho?valor=5" passa a {"valor":5}.
+    private func peloCabo(_ caminho: String, corpo: [String: Any]?) async -> (Int, Data)? {
+        guard !CaboUSB.portas().isEmpty else { return nil }
+        var c = corpo ?? [:]
+        var so = caminho
+        if let comp = URLComponents(string: caminho) {
+            so = comp.path
+            for q in comp.queryItems ?? [] { c[q.name] = Int(q.value ?? "") ?? q.value ?? "" }
+        }
+        return await CaboUSB.shared.pedido(so, corpo: c.isEmpty && corpo == nil ? nil : c)
+    }
+
     @discardableResult
     func enviar(_ caminho: String, corpo: [String: Any]? = nil) async -> Int {
+        if let r = await peloCabo(caminho, corpo: corpo ?? [:]) { return r.0 }
         guard let r = pedido(caminho, corpo: corpo) else { return -1 }
         do {
             let (_, resp) = try await URLSession.shared.data(for: r)
@@ -37,7 +52,9 @@ struct CubeClient {
         } catch { return -1 }
     }
 
-    func estado(timeout: TimeInterval = 4) async -> EstadoCubo? {
+    func estado(timeout: TimeInterval = 4, porCabo: Bool = true) async -> EstadoCubo? {
+        if porCabo, let (c, d) = await peloCabo("/estado", corpo: nil), c == 200,
+           let e = try? JSONDecoder().decode(EstadoCubo.self, from: d) { return e }
         guard let r = pedido("/estado", metodo: "GET", timeout: timeout),
               let (d, _) = try? await URLSession.shared.data(for: r) else { return nil }
         return try? JSONDecoder().decode(EstadoCubo.self, from: d)
@@ -63,12 +80,21 @@ struct CubeClient {
               (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
         return try? JSONDecoder().decode(Redes.self, from: d)
     }
-    func redes() async -> Redes? { await pedirRedes(pedido("/redes", metodo: "GET")) }
+    private func redesPeloCabo(_ caminho: String, _ corpo: [String: Any]?) async -> Redes? {
+        guard let (c, d) = await peloCabo(caminho, corpo: corpo), c == 200 else { return nil }
+        return try? JSONDecoder().decode(Redes.self, from: d)
+    }
+    func redes() async -> Redes? {
+        if let r = await redesPeloCabo("/redes", nil) { return r }
+        return await pedirRedes(pedido("/redes", metodo: "GET"))
+    }
     func adicionarRede(_ ssid: String, _ senha: String) async -> Redes? {
-        await pedirRedes(pedido("/redes", corpo: ["ssid": ssid, "senha": senha]))
+        if let r = await redesPeloCabo("/redes", ["ssid": ssid, "senha": senha]) { return r }
+        return await pedirRedes(pedido("/redes", corpo: ["ssid": ssid, "senha": senha]))
     }
     func apagarRede(_ ssid: String) async -> Redes? {
-        await pedirRedes(pedido("/redes/apagar", corpo: ["ssid": ssid]))
+        if let r = await redesPeloCabo("/redes/apagar", ["ssid": ssid]) { return r }
+        return await pedirRedes(pedido("/redes/apagar", corpo: ["ssid": ssid]))
     }
     func limpar() async { await enviar("/limpar") }
 }

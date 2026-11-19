@@ -53,4 +53,6 @@ Endpoints: `POST /notify`, `/limpar`, `/brilho`, `/resumo`, `GET|POST /redes`, `
 
 No relógio, as horas alternam com uns olhos animados e coloridos (pré-visualização em `firmware/olhos-preview.gif`); `POST /olhos {"ativo":true,"cada":20}` liga/desliga e muda o intervalo, e `OLHOS_CADA_SEGUNDOS` no `config.h` define o valor de arranque.
 
+**Pelo cabo USB:** ligado ao Mac por USB, o cubo funciona mesmo sem Wi-Fi. A app escreve na porta série (115200) uma linha `@/notify {json}` (ou `@/estado`, `@/resumo`, `@/hora {"epoch":…}`, …) e o cubo responde `@R <código> <json>`; pelo cabo não é preciso token e a app acerta-lhe a hora. Sem Wi-Fi o cubo já não reinicia: abre a rede `Cubo-Setup` e continua a aceitar pedidos pelo cabo.
+
 O cubo guarda até 6 redes Wi-Fi e liga-se à conhecida com melhor sinal; se não encontrar nenhuma, cria a rede `Cubo-Setup`.

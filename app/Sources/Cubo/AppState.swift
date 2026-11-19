@@ -314,7 +314,7 @@ final class AppState: ObservableObject {
         aProcurarCubo = true
         defer { aProcurarCubo = false }
         let token = config.token
-        if let e = await CubeClient(base: "http://cubo.local", token: token).estado(timeout: 3) {
+        if let e = await CubeClient(base: "http://cubo.local", token: token).estado(timeout: 3, porCabo: false) {
             guardarEnderecoCubo(e.ip)
             return e
         }
@@ -325,7 +325,7 @@ final class AppState: ObservableObject {
                     guard proximo <= 254 else { return }
                     let ip = "\(prefixo).\(proximo)"
                     proximo += 1
-                    g.addTask { await CubeClient(base: "http://\(ip)", token: token).estado(timeout: 1.2) }
+                    g.addTask { await CubeClient(base: "http://\(ip)", token: token).estado(timeout: 1.2, porCabo: false) }
                 }
                 for _ in 0..<48 { lancar() }
                 while let r = await g.next() {

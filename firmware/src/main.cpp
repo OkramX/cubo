@@ -25,7 +25,7 @@
 #include "config.h"
 #include "icones.h"
 
-#define FW_VERSAO "1.5.2"
+#define FW_VERSAO "1.6.0"
 
 // ---- Ecrã -------------------------------------------------------------
 Adafruit_ST7789 tft(-1, PIN_TFT_DC, PIN_TFT_RST);   // sem CS
@@ -72,6 +72,9 @@ uint32_t ultimaNotifMs = 0;
 int      ultimoMinuto = -1;
 int      brilhoManual = -1;        // -1 = automático (dia/noite)
 bool     ultimoWifiOk = true;
+uint32_t ultimoCaboMs = 0;          // último pedido recebido pelo cabo USB
+bool caboAtivo() { return ultimoCaboMs && millis() - ultimoCaboMs < 120000UL; }
+void servirSerie();
 String   token = CUBO_TOKEN;           // pode ser mudado no portal de configuração
 
 // =====================================================================
@@ -189,7 +192,7 @@ const char* motivoWifi(uint8_t s) {
 
 // Liga a uma rede; se falhar, tenta outra vez em modo 802.11g, que alguns
 // routers Wi-Fi 6 (802.11ax) aceitam melhor do ESP8266
-bool ligarA(const String& ssid, const String& senha, uint32_t esperaMs) {
+bool ligarA(const String& ssid, const String& senha, uint32_t esperaMs, uint8_t nModos = 3) {
   static WiFiEventHandler aoDesligar = WiFi.onStationModeDisconnected([](const WiFiEventStationModeDisconnected& e) {
     ultimoMotivoWifi = e.reason;
     Serial.printf("  router desligou: motivo %d\n", e.reason);
@@ -213,7 +216,7 @@ bool ligarA(const String& ssid, const String& senha, uint32_t esperaMs) {
   WiFi.scanDelete();
   static const WiFiPhyMode_t modos[] = {WIFI_PHY_MODE_11N, WIFI_PHY_MODE_11G, WIFI_PHY_MODE_11B};
   static const char* nomes[] = {"11n", "11g", "11b"};
-  for (uint8_t m = 0; m < 3; m++) {
+  for (uint8_t m = 0; m < nModos; m++) {
     WiFi.setPhyMode(modos[m]);
     ultimoMotivoWifi = 0;
     if (temBssid) WiFi.begin(ssid.c_str(), senha.c_str(), canal, bssid);
@@ -221,7 +224,8 @@ bool ligarA(const String& ssid, const String& senha, uint32_t esperaMs) {
     uint32_t t0 = millis();
     while (WiFi.status() != WL_CONNECTED && millis() - t0 < esperaMs) {
       if (WiFi.status() == WL_WRONG_PASSWORD) break;
-      delay(200);
+      servirSerie();
+      delay(50);
     }
     Serial.printf("Wi-Fi '%s' modo %s: estado %d\n", ssid.c_str(), nomes[m], WiFi.status());
     if (WiFi.status() == WL_CONNECTED) { WiFi.setAutoReconnect(true); WiFi.persistent(true); return true; }
@@ -236,7 +240,7 @@ bool ligarA(const String& ssid, const String& senha, uint32_t esperaMs) {
 }
 
 // Procura as redes à volta e liga-se à conhecida com melhor sinal
-bool ligarRedeConhecida(uint32_t esperaMs = 15000) {
+bool ligarRedeConhecida(uint32_t esperaMs = 15000, uint8_t nModos = 3) {
   if (nRedes == 0) return false;
   WiFi.mode(WIFI_STA);
   int n = WiFi.scanNetworks();
@@ -248,7 +252,7 @@ bool ligarRedeConhecida(uint32_t esperaMs = 15000) {
   }
   WiFi.scanDelete();
   if (melhor < 0) return false;
-  return ligarA(redes[melhor].ssid, redes[melhor].senha, esperaMs);
+  return ligarA(redes[melhor].ssid, redes[melhor].senha, esperaMs, nModos);
 }
 
 // =====================================================================
@@ -570,7 +574,7 @@ void desenharRelogio(bool tudo) {
   // Estado do Wi-Fi (só aparece se houver problema)
   // ...ou, em vez disso, as tarefas que faltam hoje
   tft.fillRect(0, 8, LARG, 18, COR_FUNDO);
-  if (WiFi.status() != WL_CONNECTED) centrado("sem Wi-Fi", 8, 2, COR_ERRO, COR_FUNDO);
+  if (WiFi.status() != WL_CONNECTED && !caboAtivo()) centrado("sem Wi-Fi", 8, 2, COR_ERRO, COR_FUNDO);
   else if (resumoAtivo() && ok && resumo.focoAte > (uint32_t)agora) {
     time_t tf = resumo.focoAte;
     struct tm tmf;
@@ -680,7 +684,7 @@ void atualizarEcra() {
     if (emOlhos) animarOlhos(agora);
     else if (olhosLigados && horaValida() && (int32_t)(agora - proximosOlhos) >= 0) comecarOlhos(agora);
 
-    bool wifiOk = WiFi.status() == WL_CONNECTED;
+    bool wifiOk = WiFi.status() == WL_CONNECTED || caboAtivo();
     time_t t = time(nullptr);
     struct tm tmv;
     localtime_r(&t, &tmv);
@@ -718,23 +722,33 @@ void atualizarEcra() {
 // =====================================================================
 //  Servidor HTTP
 // =====================================================================
+// Pedidos chegam por HTTP (Wi-Fi) ou pelo cabo USB (linhas "@/caminho {json}")
+bool   pedidoSerie = false;
+String corpoSerie;
+String corpo() { return pedidoSerie ? corpoSerie : server.arg("plain"); }
+void responder(int codigo, const char* tipo, const String& b) {
+  if (!pedidoSerie) { server.send(codigo, tipo, b); return; }
+  Serial.print(F("\n@R ")); Serial.print(codigo); Serial.print(' '); Serial.println(b);
+}
+
 bool autorizado() {
+  if (pedidoSerie) return true;          // o cabo USB é ligação física: não pede token
   if (server.header("X-Token") == token || server.arg("token") == token) return true;
-  server.send(401, "application/json", "{\"erro\":\"token invalido\"}");
+  responder(401, "application/json", "{\"erro\":\"token invalido\"}");
   return false;
 }
 
 void responderOk() {
-  server.send(200, "application/json",
+  responder(200, "application/json",
               String("{\"ok\":true,\"fila\":") + filaTam + ",\"nao_lidas\":" + naoLidas + "}");
 }
 
 void handleNotify() {
   if (!autorizado()) return;
   JsonDocument doc;
-  DeserializationError err = deserializeJson(doc, server.arg("plain"));
+  DeserializationError err = deserializeJson(doc, corpo());
   if (err) {
-    server.send(400, "application/json", "{\"erro\":\"JSON invalido\"}");
+    responder(400, "application/json", "{\"erro\":\"JSON invalido\"}");
     return;
   }
   Alerta a;
@@ -755,8 +769,8 @@ void handleLimpar() {
 void handleResumo() {
   if (!autorizado()) return;
   JsonDocument doc;
-  if (deserializeJson(doc, server.arg("plain"))) {
-    server.send(400, "application/json", "{\"erro\":\"JSON invalido\"}");
+  if (deserializeJson(doc, corpo())) {
+    responder(400, "application/json", "{\"erro\":\"JSON invalido\"}");
     return;
   }
   resumo.evento     = paraAscii(String((const char*)(doc["evento"] | ""))).substring(0, 60);
@@ -772,7 +786,9 @@ void handleResumo() {
 
 void handleBrilho() {
   if (!autorizado()) return;
-  int v = server.hasArg("valor") ? server.arg("valor").toInt() : -1;
+  int v = -1;
+  if (pedidoSerie) { JsonDocument d; if (!deserializeJson(d, corpoSerie)) v = d["valor"] | -1; }
+  else if (server.hasArg("valor")) v = server.arg("valor").toInt();
   brilhoManual = (v < 0) ? -1 : constrain(v, 0, 100);
   responderOk();
 }
@@ -786,19 +802,19 @@ void handleRedes() {
   doc["max"] = REDES_MAX;
   String out;
   serializeJson(doc, out);
-  server.send(200, "application/json", out);
+  responder(200, "application/json", out);
 }
 
 void handleRedeNova() {
   if (!autorizado()) return;
   JsonDocument doc;
-  if (deserializeJson(doc, server.arg("plain"))) {
-    server.send(400, "application/json", "{\"erro\":\"JSON invalido\"}");
+  if (deserializeJson(doc, corpo())) {
+    responder(400, "application/json", "{\"erro\":\"JSON invalido\"}");
     return;
   }
   String ssid = doc["ssid"] | "", senha = doc["senha"] | "";
   if (!ssid.length() || ssid.length() > SSID_MAX || senha.length() > PASS_MAX) {
-    server.send(400, "application/json", "{\"erro\":\"nome ou palavra-passe invalidos\"}");
+    responder(400, "application/json", "{\"erro\":\"nome ou palavra-passe invalidos\"}");
     return;
   }
   // a rede atual mantém-se em primeiro
@@ -811,7 +827,7 @@ void handleRedeNova() {
 void handleRedeApagar() {
   if (!autorizado()) return;
   JsonDocument doc;
-  deserializeJson(doc, server.arg("plain"));
+  deserializeJson(doc, corpo());
   esquecerRede(String((const char*)(doc["ssid"] | "")));
   handleRedes();
 }
@@ -820,14 +836,14 @@ void handleRedeApagar() {
 void handleToken() {
   if (!autorizado()) return;
   JsonDocument doc;
-  deserializeJson(doc, server.arg("plain"));
+  deserializeJson(doc, corpo());
   String novo = doc["novo"] | "";
   if (novo.length() < 8 || novo.length() > (unsigned)TOKEN_MAX) {
-    server.send(400, "application/json", "{\"erro\":\"o codigo tem de ter entre 8 e 64 caracteres\"}");
+    responder(400, "application/json", "{\"erro\":\"o codigo tem de ter entre 8 e 64 caracteres\"}");
     return;
   }
   guardarToken(novo);
-  server.send(200, "application/json", "{\"ok\":true}");
+  responder(200, "application/json", "{\"ok\":true}");
   delay(300);
   ESP.restart();
 }
@@ -836,18 +852,18 @@ void handleToken() {
 void handleOlhos() {
   if (!autorizado()) return;
   JsonDocument doc;
-  deserializeJson(doc, server.arg("plain"));
+  deserializeJson(doc, corpo());
   if (doc["ativo"].is<bool>()) olhosLigados = doc["ativo"];
   if (doc["cada"].is<int>()) olhosCadaMs = (uint32_t)constrain((int)doc["cada"], 5, 3600) * 1000UL;
   if (!olhosLigados && emOlhos) terminarOlhos(millis());
   proximosOlhos = millis() + 2000;
-  server.send(200, "application/json", String("{\"ok\":true,\"ativo\":") + (olhosLigados ? "true" : "false") +
+  responder(200, "application/json", String("{\"ok\":true,\"ativo\":") + (olhosLigados ? "true" : "false") +
               ",\"cada\":" + String(olhosCadaMs / 1000) + "}");
 }
 
 void handleEsquecerWifi() {
   if (!autorizado()) return;
-  server.send(200, "application/json", "{\"ok\":true}");
+  responder(200, "application/json", "{\"ok\":true}");
   delay(300);
   WiFiManager wm;
   wm.resetSettings();
@@ -858,6 +874,8 @@ void handleEstado() {
   String j = "{";
   j += "\"versao\":\"" FW_VERSAO "\",";
   j += "\"ip\":\"" + WiFi.localIP().toString() + "\",";
+  j += "\"wifi\":" + String(WiFi.status() == WL_CONNECTED ? "true" : "false") + ",";
+  j += "\"cabo\":" + String(pedidoSerie ? "true" : "false") + ",";
   j += "\"rssi\":" + String(WiFi.RSSI()) + ",";
   j += "\"nao_lidas\":" + String(naoLidas) + ",";
   j += "\"fila\":" + String(filaTam) + ",";
@@ -865,7 +883,7 @@ void handleEstado() {
   j += "\"uptime_s\":" + String(millis() / 1000) + ",";
   j += "\"memoria_livre\":" + String(ESP.getFreeHeap());
   j += "}";
-  server.send(200, "application/json", j);
+  responder(200, "application/json", j);
 }
 
 void handleRaiz() {
@@ -880,13 +898,100 @@ void handleRaiz() {
          "<code>POST /brilho?valor=0-100</code> (-1 = automático), "
          "<code>GET /estado</code>, <code>/update</code> (atualizar firmware).</p>"
          "<p>Todos os POST exigem o cabeçalho <code>X-Token</code>.</p></html>");
-  server.send(200, "text/html; charset=utf-8", h);
+  responder(200, "text/html; charset=utf-8", h);
+}
+
+// Acerta o relógio (pelo cabo não há NTP): {"epoch": segundos desde 1970}
+void handleHora() {
+  JsonDocument doc;
+  if (deserializeJson(doc, corpo()) || !doc["epoch"].is<uint32_t>()) { responder(400, "application/json", "{\"erro\":\"epoch\"}"); return; }
+  struct timeval tv = { (time_t)doc["epoch"].as<uint32_t>(), 0 };
+  settimeofday(&tv, nullptr);
+  redesenharTudo = true;
+  responderOk();
+}
+
+// Lê comandos do cabo USB: uma linha "@/notify {json}", "@/estado", ...
+void tratarLinhaSerie(const String& l) {
+  if (!l.startsWith("@/")) return;
+  int sp = l.indexOf(' ');
+  String caminho = sp < 0 ? l.substring(1) : l.substring(1, sp);
+  corpoSerie = sp < 0 ? String() : l.substring(sp + 1);
+  pedidoSerie = true;
+  ultimoCaboMs = millis();
+  if      (caminho == "/notify")       handleNotify();
+  else if (caminho == "/estado")       handleEstado();
+  else if (caminho == "/resumo")       handleResumo();
+  else if (caminho == "/limpar")       handleLimpar();
+  else if (caminho == "/brilho")       handleBrilho();
+  else if (caminho == "/olhos")        handleOlhos();
+  else if (caminho == "/hora")         handleHora();
+  else if (caminho == "/redes")        corpoSerie.length() ? handleRedeNova() : handleRedes();
+  else if (caminho == "/redes/apagar") handleRedeApagar();
+  else if (caminho == "/token")        handleToken();
+  else responder(404, "application/json", "{\"erro\":\"desconhecido\"}");
+  pedidoSerie = false;
+  corpoSerie = String();
+}
+
+void servirSerie() {
+  static String linha;
+  while (Serial.available()) {
+    char c = (char)Serial.read();
+    if (c == '\n') { tratarLinhaSerie(linha); linha = String(); }
+    else if (c != '\r' && linha.length() < 2048) linha += c;
+  }
+}
+
+WiFiManager wm;
+WiFiManagerParameter campoToken("token", "Codigo secreto (igual ao do Mac, min. 8 caracteres)", "", TOKEN_MAX);
+bool guardarParametros = false;
+bool redeAtiva = false;       // servidor HTTP, mDNS e OTA a funcionar
+bool portalAberto = false;    // rede "Cubo-Setup" aberta
+uint32_t ultimoPortalMs = 0;
+
+// Ligado a um Wi-Fi: liga o servidor, o cubo.local e as atualizações sem fios
+void iniciarRede() {
+  lembrarRede(WiFi.SSID(), WiFi.psk());   // a rede atual fica sempre guardada
+  if (guardarParametros) { guardarToken(String(campoToken.getValue())); guardarParametros = false; }
+  static bool primeiraVez = true;
+  if (primeiraVez) {
+    primeiraVez = false;
+    ArduinoOTA.setHostname(CUBO_HOSTNAME);
+    ArduinoOTA.setPassword(token.c_str());
+    ArduinoOTA.onStart([]() { mostrarMensagem("Atualizar", "a receber firmware\nnao desligues"); });
+    ArduinoOTA.begin();
+    httpUpdater.setup(&server, "/update", "admin", token);
+  }
+  MDNS.end();
+  if (MDNS.begin(CUBO_HOSTNAME)) MDNS.addService("http", "tcp", 80);
+  server.begin();
+  redeAtiva = true;
+  Serial.print(F("IP: "));
+  Serial.println(WiFi.localIP());
+  mostrarMensagem("Ligado", WiFi.localIP().toString() + "\n" CUBO_HOSTNAME ".local");
+  delay(3000);
+  redesenharTudo = true;
+}
+
+// Abre a rede "Cubo-Setup" sem bloquear: o relógio e o cabo USB continuam a funcionar
+void abrirPortal(bool avisar) {
+  if (redeAtiva) { server.stop(); MDNS.end(); redeAtiva = false; }
+  wm.startConfigPortal(CUBO_AP_NOME);
+  portalAberto = true;
+  ultimoPortalMs = millis();
+  if (avisar) {
+    mostrarMensagem("Sem Wi-Fi", "Liga-te a rede\n" CUBO_AP_NOME "\n(192.168.4.1)\nou usa o cabo USB");
+    delay(5000);
+  }
+  redesenharTudo = true;
 }
 
 // =====================================================================
 //  Arranque
 // =====================================================================
 void setup() {
+  Serial.setRxBufferSize(2048);
   Serial.begin(115200);
   Serial.println();
   Serial.println(F("Cubo de notificacoes " FW_VERSAO));
@@ -905,68 +1010,18 @@ void setup() {
 
   lerToken();
   lerRedes();
+  configTime(TZ_INFO, "pt.pool.ntp.org", "pool.ntp.org");   // fuso horário, mesmo sem rede
+  Serial.println(token == CUBO_TOKEN ? F("Token: o do config.h") : F("Token: definido no portal"));
 
-  // Wi-Fi: se não houver rede guardada, abre o portal de configuração,
-  // onde também se define o token (código secreto partilhado com o Mac)
-  WiFiManager wm;
-  WiFiManagerParameter campoToken("token", "Codigo secreto (igual ao do Mac, min. 8 caracteres)", "", TOKEN_MAX);
+  // Portal "Cubo-Setup" (não bloqueia), onde também se define o token
   wm.addParameter(&campoToken);
-  static bool guardarParametros = false;
   wm.setSaveConfigCallback([]() { guardarParametros = true; });
+  wm.setPreSaveConfigCallback([]() { mostrarMensagem("A ligar...", "a experimentar\na rede escolhida"); });
   wm.setHostname(CUBO_HOSTNAME);
+  wm.setConfigPortalBlocking(false);
   wm.setConfigPortalTimeout(300);
   wm.setConnectTimeout(25);
   wm.setSaveConnectTimeout(30);
-  wm.setConnectRetries(2);
-  wm.setBreakAfterConfig(true);        // se a ligação falhar, voltamos aqui para explicar e tentar de novo
-  static bool tentouRede = false;
-  wm.setPreSaveConfigCallback([]() {
-    tentouRede = true;
-    mostrarMensagem("A ligar...", "a experimentar\na rede escolhida");
-  });
-  wm.setAPCallback([](WiFiManager*) {
-    mostrarMensagem("Configurar Wi-Fi", "Liga-te a rede\n" CUBO_AP_NOME "\ne abre\n192.168.4.1");
-  });
-  bool ligado = ligarRedeConhecida();
-  if (!ligado && wm.getWiFiSSID().length()) {   // a última rede escrita no portal
-    mostrarMensagem("A ligar...", wm.getWiFiSSID());
-    ligado = ligarA(wm.getWiFiSSID(), wm.getWiFiPass(), 20000);
-  }
-  for (uint8_t volta = 0; !ligado && volta < 6; volta++) {
-    tentouRede = false;
-    ligado = wm.startConfigPortal(CUBO_AP_NOME);
-    ligado = ligado && WiFi.status() == WL_CONNECTED;
-    if (ligado || !tentouRede) break;   // ligou, ou o portal fechou por tempo
-    // falhou: tenta a mesma rede em modo compatível antes de voltar a pedir
-    String ssid = wm.getWiFiSSID(), senha = wm.getWiFiPass();
-    uint8_t motivo = WiFi.status();
-    mostrarMensagem("A tentar de novo", "modo compativel\n" + ssid);
-    WiFi.softAPdisconnect(true);
-    ligado = ligarA(ssid, senha, 25000);
-    if (!ligado) {
-      if (WiFi.status() == WL_WRONG_PASSWORD) motivo = WL_WRONG_PASSWORD;
-      mostrarMensagem("Nao ligou", String(motivoWifi(motivo)) + "\nMAC " + WiFi.macAddress());
-      delay(6000);
-    }
-  }
-  if (!ligado) {
-    mostrarMensagem("Sem Wi-Fi", "a reiniciar...");
-    delay(2000);
-    ESP.restart();
-  }
-  lembrarRede(WiFi.SSID(), WiFi.psk());   // a rede atual fica sempre guardada
-
-  if (guardarParametros) guardarToken(String(campoToken.getValue()));
-  Serial.println(token == CUBO_TOKEN ? F("Token: o do config.h") : F("Token: definido no portal"));
-
-  configTime(TZ_INFO, "pt.pool.ntp.org", "pool.ntp.org");
-
-  if (MDNS.begin(CUBO_HOSTNAME)) MDNS.addService("http", "tcp", 80);
-
-  ArduinoOTA.setHostname(CUBO_HOSTNAME);
-  ArduinoOTA.setPassword(token.c_str());
-  ArduinoOTA.onStart([]() { mostrarMensagem("Atualizar", "a receber firmware\nnao desligues"); });
-  ArduinoOTA.begin();
 
   server.collectHeaders("X-Token");
   server.on("/", HTTP_GET, handleRaiz);
@@ -975,31 +1030,41 @@ void setup() {
   server.on("/limpar", HTTP_POST, handleLimpar);
   server.on("/brilho", HTTP_POST, handleBrilho);
   server.on("/resumo", HTTP_POST, handleResumo);
+  server.on("/hora", HTTP_POST, handleHora);
   server.on("/esquecer-wifi", HTTP_POST, handleEsquecerWifi);
   server.on("/redes", HTTP_GET, handleRedes);
   server.on("/redes", HTTP_POST, handleRedeNova);
   server.on("/redes/apagar", HTTP_POST, handleRedeApagar);
   server.on("/token", HTTP_POST, handleToken);
   server.on("/olhos", HTTP_POST, handleOlhos);
-  httpUpdater.setup(&server, "/update", "admin", token);
-  server.begin();
 
-  mostrarMensagem("Ligado", WiFi.localIP().toString() + "\n" CUBO_HOSTNAME ".local");
-  Serial.print(F("IP: "));
-  Serial.println(WiFi.localIP());
-  delay(4000);
+  bool ligado = ligarRedeConhecida();
+  if (!ligado && wm.getWiFiSSID().length()) {   // a última rede escrita no portal
+    mostrarMensagem("A ligar...", wm.getWiFiSSID());
+    ligado = ligarA(wm.getWiFiSSID(), wm.getWiFiPass(), 15000);
+  }
+  if (ligado) iniciarRede();
+  else {
+    if (ultimoMotivoWifi) {
+      mostrarMensagem("Nao ligou", String(motivoWifi(WiFi.status())) + "\nMAC " + WiFi.macAddress());
+      delay(5000);
+    }
+    abrirPortal(true);
+  }
   redesenharTudo = true;
 }
 
-// Se o Wi-Fi cair (ex.: o cubo mudou de sítio), tenta as outras redes conhecidas;
-// ao fim de 5 minutos sem rede reinicia (e abre o portal "Cubo-Setup" se nenhuma estiver à vista)
+// Se o Wi-Fi cair (ex.: o cubo mudou de sítio), tenta as redes conhecidas de minuto a minuto;
+// sem rede há 5 min, abre o portal "Cubo-Setup" (no máximo de 15 em 15 min). Nunca reinicia:
+// sem Wi-Fi o cubo continua a receber tudo pelo cabo USB.
 void vigiarWifi() {
   static uint32_t semRedeDesde = 0, ultimaTentativa = 0;
   static bool estavaLigado = true;
   bool ligado = WiFi.status() == WL_CONNECTED;
   uint32_t agora = millis();
   if (ligado) {
-    if (!estavaLigado) {            // voltou: pode ser outra rede, refaz o nome cubo.local
+    if (!redeAtiva) iniciarRede();
+    else if (!estavaLigado) {       // voltou: pode ser outra rede, refaz o nome cubo.local
       MDNS.end();
       if (MDNS.begin(CUBO_HOSTNAME)) MDNS.addService("http", "tcp", 80);
       lembrarRede(WiFi.SSID(), WiFi.psk());
@@ -1010,18 +1075,26 @@ void vigiarWifi() {
     if (!semRedeDesde) semRedeDesde = agora;
     if (agora - semRedeDesde > 30000 && agora - ultimaTentativa > 60000) {
       ultimaTentativa = agora;
-      ligarRedeConhecida(12000);
+      ligarRedeConhecida(10000, 1);
     }
-    if (agora - semRedeDesde > 5UL * 60000UL) ESP.restart();
+    if (agora - semRedeDesde > 5UL * 60000UL && agora - ultimoPortalMs > 15UL * 60000UL) abrirPortal(false);
   }
   estavaLigado = ligado;
 }
 
 void loop() {
-  vigiarWifi();
-  server.handleClient();
-  MDNS.update();
-  ArduinoOTA.handle();
+  servirSerie();
+  if (portalAberto) {
+    if (wm.process()) { portalAberto = false; iniciarRede(); }          // escolheram uma rede e ligou
+    else if (!wm.getConfigPortalActive()) portalAberto = false;          // fechou por tempo
+  } else {
+    vigiarWifi();
+  }
+  if (redeAtiva) {
+    server.handleClient();
+    MDNS.update();
+    ArduinoOTA.handle();
+  }
   atualizarEcra();
   delay(2);
 }

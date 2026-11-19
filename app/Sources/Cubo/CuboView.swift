@@ -19,7 +19,7 @@ struct CuboView: View {
                 if let e = estado.estadoCubo {
                     LabeledContent("Ligação") { Label("Ligado", systemImage: "circle.fill").foregroundStyle(.green) }
                     LabeledContent("Firmware", value: e.versao)
-                    LabeledContent("Endereço", value: e.ip)
+                    LabeledContent("Endereço", value: e.wifi == false ? "cabo USB (sem Wi-Fi)" : e.ip)
                     LabeledContent("Sinal Wi-Fi") { Text(sinal(e.rssi)) }
                     LabeledContent("Ligado há", value: duracao(e.uptime_s))
                     LabeledContent("Hora", value: e.hora_ok ? "Certa" : "A acertar…")

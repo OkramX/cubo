@@ -142,7 +142,7 @@ struct EstadoCuboPill: View {
     var body: some View {
         HStack(spacing: 6) {
             Circle().fill(estado.cuboOnline ? Color.green : Color.red).frame(width: 8, height: 8)
-            Text(estado.cuboOnline ? "Cubo ligado" : "Cubo desligado")
+            Text(estado.cuboOnline ? (estado.estadoCubo?.cabo == true ? "Cubo ligado pelo cabo" : "Cubo ligado") : "Cubo desligado")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
