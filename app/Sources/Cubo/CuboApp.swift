@@ -3,28 +3,20 @@ import SwiftUI
 
 @main
 struct CuboApp: App {
-    @StateObject private var estado = AppState()
-    @StateObject private var agenda = Agenda()
+    @NSApplicationDelegateAdaptor(Delegado.self) private var delegado
 
     var body: some Scene {
-        MenuBarExtra {
-            MenuView().environmentObject(estado).environmentObject(agenda)
-                .onAppear { ligar() }
-        } label: {
-            let n = estado.porVer.count
-            IconeBarra(estado: estado, ligar: ligar)
-            if n > 0 { Text("\(n)") }
-        }
-        .menuBarExtraStyle(.window)
-
         Window("Cubo", id: "principal") {
-            JanelaPrincipal().environmentObject(estado).environmentObject(agenda)
+            JanelaPrincipal().environmentObject(delegado.estado).environmentObject(delegado.agenda)
                 .frame(minWidth: 720, minHeight: 480)
         }
         .defaultSize(width: 900, height: 620)
+        .defaultLaunchBehavior(.suppressed)
     }
+}
 
-    private func ligar() {
+extension Delegado {
+    func ligar() {
         let e = estado, a = agenda
         a.cubo = { e.cubo }
         a.focoAte = { e.focoAte }
@@ -314,25 +306,6 @@ struct ResumoDia: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-// MARK: - Ícone da barra de menus
-
-struct IconeBarra: View {
-    @ObservedObject var estado: AppState
-    let ligar: () -> Void
-    @Environment(\.openWindow) private var openWindow
-
-    var body: some View {
-        Image(systemName: estado.emFoco ? "moon.fill" : (estado.porVer.isEmpty ? "cube" : "cube.fill"))
-            .onAppear {
-                estado.abrirJanela = {
-                    openWindow(id: "principal")
-                    NSApp.activate(ignoringOtherApps: true)
-                }
-                ligar()
-            }
     }
 }
 
