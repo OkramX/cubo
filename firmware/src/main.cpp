@@ -25,7 +25,7 @@
 #include "config.h"
 #include "icones.h"
 
-#define FW_VERSAO "1.6.0"
+#define FW_VERSAO "1.6.1"
 
 // ---- Ecrã -------------------------------------------------------------
 Adafruit_ST7789 tft(-1, PIN_TFT_DC, PIN_TFT_RST);   // sem CS
@@ -75,6 +75,8 @@ bool     ultimoWifiOk = true;
 uint32_t ultimoCaboMs = 0;          // último pedido recebido pelo cabo USB
 bool caboAtivo() { return ultimoCaboMs && millis() - ultimoCaboMs < 120000UL; }
 void servirSerie();
+void atualizarEcra();
+bool noArranque = true;             // durante o arranque, um pedido pelo cabo interrompe as tentativas de Wi-Fi
 String   token = CUBO_TOKEN;           // pode ser mudado no portal de configuração
 
 // =====================================================================
@@ -225,6 +227,10 @@ bool ligarA(const String& ssid, const String& senha, uint32_t esperaMs, uint8_t 
     while (WiFi.status() != WL_CONNECTED && millis() - t0 < esperaMs) {
       if (WiFi.status() == WL_WRONG_PASSWORD) break;
       servirSerie();
+      if (caboAtivo()) {
+        if (noArranque) { WiFi.disconnect(); return false; }   // há cabo: não vale a pena esperar pelo Wi-Fi
+        atualizarEcra();                                       // o relógio e os alertas continuam
+      }
       delay(50);
     }
     Serial.printf("Wi-Fi '%s' modo %s: estado %d\n", ssid.c_str(), nomes[m], WiFi.status());
@@ -1039,11 +1045,13 @@ void setup() {
   server.on("/olhos", HTTP_POST, handleOlhos);
 
   bool ligado = ligarRedeConhecida();
-  if (!ligado && wm.getWiFiSSID().length()) {   // a última rede escrita no portal
+  if (!ligado && !caboAtivo() && wm.getWiFiSSID().length()) {   // a última rede escrita no portal
     mostrarMensagem("A ligar...", wm.getWiFiSSID());
     ligado = ligarA(wm.getWiFiSSID(), wm.getWiFiPass(), 15000);
   }
+  noArranque = false;
   if (ligado) iniciarRede();
+  else if (caboAtivo()) Serial.println(F("Sem Wi-Fi: a funcionar pelo cabo USB"));
   else {
     if (ultimoMotivoWifi) {
       mostrarMensagem("Nao ligou", String(motivoWifi(WiFi.status())) + "\nMAC " + WiFi.macAddress());
@@ -1073,11 +1081,12 @@ void vigiarWifi() {
     semRedeDesde = 0;
   } else {
     if (!semRedeDesde) semRedeDesde = agora;
-    if (agora - semRedeDesde > 30000 && agora - ultimaTentativa > 60000) {
+    const uint32_t intervalo = caboAtivo() ? 5UL * 60000UL : 60000UL;   // com cabo, tenta com calma
+    if (agora - semRedeDesde > 30000 && agora - ultimaTentativa > intervalo) {
       ultimaTentativa = agora;
       ligarRedeConhecida(10000, 1);
     }
-    if (agora - semRedeDesde > 5UL * 60000UL && agora - ultimoPortalMs > 15UL * 60000UL) abrirPortal(false);
+    if (!caboAtivo() && agora - semRedeDesde > 5UL * 60000UL && agora - ultimoPortalMs > 15UL * 60000UL) abrirPortal(false);
   }
   estavaLigado = ligado;
 }
