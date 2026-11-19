@@ -195,30 +195,43 @@ bool ligarA(const String& ssid, const String& senha, uint32_t esperaMs) {
     Serial.printf("  router desligou: motivo %d\n", e.reason);
   });
   Serial.printf("  palavra-passe com %d caracteres\n", senha.length());
+  WiFi.persistent(false);
+  WiFi.setAutoReconnect(false);
+  WiFi.disconnect(true);
+  delay(200);
   WiFi.mode(WIFI_STA);
+  WiFi.setSleepMode(WIFI_NONE_SLEEP);
   int n = WiFi.scanNetworks(false, true);
-  bool visivel = false;
+  int32_t canal = 0; uint8_t bssid[6]; bool temBssid = false;
   for (int i = 0; i < n; i++) {
     if (WiFi.SSID(i) == ssid) {
-      visivel = true;
-      Serial.printf("  vejo '%s' canal %d sinal %d dBm cifra %d\n", ssid.c_str(), WiFi.channel(i), WiFi.RSSI(i), WiFi.encryptionType(i));
+      if (!temBssid) { canal = WiFi.channel(i); memcpy(bssid, WiFi.BSSID(i), 6); temBssid = true; }
+      Serial.printf("  vejo '%s' %s canal %d sinal %d dBm cifra %d\n", ssid.c_str(), WiFi.BSSIDstr(i).c_str(), WiFi.channel(i), WiFi.RSSI(i), WiFi.encryptionType(i));
     }
   }
-  if (!visivel) Serial.printf("  nao vejo '%s' (%d redes a volta)\n", ssid.c_str(), n);
+  if (!temBssid) Serial.printf("  nao vejo '%s' (%d redes a volta)\n", ssid.c_str(), n);
   WiFi.scanDelete();
-  for (uint8_t modo = 0; modo < 2; modo++) {
-    WiFi.setPhyMode(modo == 0 ? WIFI_PHY_MODE_11N : WIFI_PHY_MODE_11G);
-    WiFi.begin(ssid.c_str(), senha.c_str());
+  static const WiFiPhyMode_t modos[] = {WIFI_PHY_MODE_11N, WIFI_PHY_MODE_11G, WIFI_PHY_MODE_11B};
+  static const char* nomes[] = {"11n", "11g", "11b"};
+  for (uint8_t m = 0; m < 3; m++) {
+    WiFi.setPhyMode(modos[m]);
+    ultimoMotivoWifi = 0;
+    if (temBssid) WiFi.begin(ssid.c_str(), senha.c_str(), canal, bssid);
+    else WiFi.begin(ssid.c_str(), senha.c_str());
     uint32_t t0 = millis();
     while (WiFi.status() != WL_CONNECTED && millis() - t0 < esperaMs) {
-      if (WiFi.status() == WL_WRONG_PASSWORD) return false;   // nao adianta insistir
+      if (WiFi.status() == WL_WRONG_PASSWORD) break;
       delay(200);
     }
-    Serial.printf("Wi-Fi '%s' modo %s: estado %d\n", ssid.c_str(), modo == 0 ? "11n" : "11g", WiFi.status());
-    if (WiFi.status() == WL_CONNECTED) return true;
+    Serial.printf("Wi-Fi '%s' modo %s: estado %d\n", ssid.c_str(), nomes[m], WiFi.status());
+    if (WiFi.status() == WL_CONNECTED) { WiFi.setAutoReconnect(true); WiFi.persistent(true); return true; }
+    if (WiFi.status() == WL_WRONG_PASSWORD) break;
     WiFi.disconnect();
     delay(300);
   }
+  WiFi.setPhyMode(WIFI_PHY_MODE_11N);
+  WiFi.setAutoReconnect(true);
+  WiFi.persistent(true);
   return false;
 }
 
