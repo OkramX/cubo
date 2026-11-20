@@ -88,6 +88,14 @@ struct CuboConfig {
         get { raw["som"] as? Bool ?? true }
         set { raw["som"] = newValue }
     }
+    var respostas: Bool {
+        get { raw["respostas_sugeridas"] as? Bool ?? true }
+        set { raw["respostas_sugeridas"] = newValue }
+    }
+    var sobreMim: String {
+        get { raw["sobre_mim"] as? String ?? "" }
+        set { raw["sobre_mim"] = newValue }
+    }
     var codigos: String {
         get { raw["codigos_verificacao"] as? String ?? "esconder" }
         set { raw["codigos_verificacao"] = newValue }

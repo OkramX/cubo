@@ -144,6 +144,18 @@ struct CuboView: View {
                 Text("Toca mesmo com o Mac em silêncio. Durante a Concentração só toca para as pessoas prioritárias.")
             }
 
+            Section {
+                Toggle("Preparar respostas a emails e WhatsApp", isOn: liga(\.respostas))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Sobre ti e como respondes").font(.callout)
+                    TextField("Ex.: Chamo-me …, trabalho em …; trato os clientes por você; assino «Cumprimentos, …»",
+                              text: liga(\.sobreMim), axis: .vertical)
+                        .lineLimit(2...5)
+                }
+            } header: { Text("Respostas sugeridas") } footer: {
+                Text("Quando chega um email (Mail ou eM Client) ou uma mensagem de WhatsApp, o Claude escreve uma resposta e mostra-a no painel do notch. Nada é enviado sem carregares em «Enviar». Grupos de WhatsApp, newsletters e emails automáticos ficam de fora. No eM Client a resposta é copiada e a app abre para colares com ⌘V.")
+            }
+
             Section("O que aparece no cubo") {
                 Toggle("Remetente", isOn: liga(\.mostrarTitulo))
                 Toggle("Assunto", isOn: liga(\.mostrarSubtitulo))

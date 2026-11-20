@@ -18,6 +18,7 @@ struct CuboApp: App {
 extension Delegado {
     func ligar() {
         let e = estado, a = agenda
+        Respostas.shared.estado = e
         a.cubo = { e.cubo }
         a.focoAte = { e.focoAte }
         a.focoDesde = { e.focoDesde }
@@ -42,6 +43,7 @@ struct MenuView: View {
             ResumoDia()
             ControloFoco()
             ControloSilencioMac()
+            PainelRespostas()
             HStack {
                 EstadoCuboPill()
                 Spacer()
@@ -201,6 +203,12 @@ struct LinhaItem: View {
                     if !item.visto {
                         Button { estado.marcarVisto(item) } label: { Image(systemName: "checkmark") }
                             .help("Visto")
+                    }
+                    if Respostas.podeResponder(item) {
+                        Button { Respostas.shared.considerar(item, pedido: true) } label: {
+                            Image(systemName: "arrowshape.turn.up.left")
+                        }
+                        .help("Preparar resposta")
                     }
                     Button { criarTarefa.v = true } label: { Image(systemName: "checklist") }
                         .help("Passar a tarefa")

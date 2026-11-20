@@ -146,6 +146,7 @@ final class AppState: ObservableObject {
                 guard let i = item(de: r) else { continue }
                 itens.insert(i, at: 0)
                 enviarParaCubo(i)
+                Respostas.shared.considerar(i)
                 if !emFoco || prioritaria(i) { tocar = true }
             }
             if tocar && config.som { Som.tocar() }

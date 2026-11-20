@@ -48,6 +48,7 @@ struct EntradaView: View {
     var body: some View {
         VStack(spacing: 0) {
             if let e = estado.erroBD { AvisoAcesso(detalhe: e).padding() }
+            PainelRespostas().frame(maxWidth: 560).padding(.horizontal).padding(.top, 8)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {

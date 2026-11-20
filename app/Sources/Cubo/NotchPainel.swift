@@ -146,6 +146,10 @@ final class ControladorNotch: NSObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.atualizarIcone() }
             .store(in: &subs)
+        Respostas.shared.objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.atualizarIcone() }
+            .store(in: &subs)
     }
 
     private func atualizarIcone() {
@@ -153,9 +157,11 @@ final class ControladorNotch: NSObject {
         let img = NSImage(systemSymbolName: nome, accessibilityDescription: "Cubo")
         img?.isTemplate = true
         item.button?.image = img
-        let c = estado.porVer.count
-        item.button?.title = c > 0 ? " \(c)" : ""
+        let c = estado.porVer.count, r = Respostas.shared.prontos
+        item.button?.title = (c > 0 ? " \(c)" : "") + (r > 0 ? " ✎\(r)" : "")
     }
+
+    func alternar() { clicar() }
 
     @objc private func clicar() {
         n.aberto ? fechar() : abrir()
@@ -243,8 +249,10 @@ final class Delegado: NSObject, NSApplicationDelegate {
     private var notch: ControladorNotch?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        TesteRespostas.correrSePedido()
         notch = ControladorNotch(estado: estado, agenda: agenda)
         ligar()
+        TesteRespostas.exemplo { [weak self] in self?.notch?.alternar() }
     }
 
     // Uma app com uma só janela fecha-se quando a janela fecha; a Cubo vive na barra de menus
