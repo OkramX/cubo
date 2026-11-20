@@ -197,6 +197,8 @@ enum Contexto {
                     let tel = String(c.split(separator: "@").first ?? "")
                     if !tel.isEmpty, tel.allSatisfy(\.isNumber) { r.telefone = tel }
                 }
+                // Conversas novas do WhatsApp (@lid): o número está nos contactos do WhatsApp
+                if r.telefone == nil, c.hasSuffix("@lid") { r.telefone = WhatsAppBD.telefone(lid: c) }
                 // Contactos sem número na conversa (@lid) mas com o número como nome
                 if r.telefone == nil, r.para.hasPrefix("+") {
                     let d = r.para.filter(\.isNumber)
@@ -260,24 +262,43 @@ enum WhatsAppBD {
     static let pasta = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Group Containers/group.net.whatsapp.WhatsApp.shared")
 
-    static func ultimas(jid: String, nome: String, limite: Int = 14) -> String {
+    /// Abre uma cópia de uma base de dados do WhatsApp (assim a app não é tocada nem há vistos).
+    private static func comCopia<T>(_ nome: String, _ falha: T, _ corpo: (OpaquePointer?) -> T) -> T {
         let fm = FileManager.default
         let tmp = fm.temporaryDirectory.appendingPathComponent("cubo-wa-\(UUID().uuidString)")
         defer { try? fm.removeItem(at: tmp) }
         do {
             try fm.createDirectory(at: tmp, withIntermediateDirectories: true)
             for suf in ["", "-wal", "-shm"] {
-                let o = pasta.appendingPathComponent("ChatStorage.sqlite" + suf)
+                let o = pasta.appendingPathComponent(nome + suf)
                 if fm.fileExists(atPath: o.path) {
-                    try fm.copyItem(at: o, to: tmp.appendingPathComponent("ChatStorage.sqlite" + suf))
+                    try fm.copyItem(at: o, to: tmp.appendingPathComponent(nome + suf))
                 }
             }
-        } catch { return "" }
-
+        } catch { return falha }
         var db: OpaquePointer?
-        guard sqlite3_open_v2(tmp.appendingPathComponent("ChatStorage.sqlite").path, &db,
-                              SQLITE_OPEN_READWRITE, nil) == SQLITE_OK else { return "" }
+        guard sqlite3_open_v2(tmp.appendingPathComponent(nome).path, &db,
+                              SQLITE_OPEN_READWRITE, nil) == SQLITE_OK else { sqlite3_close(db); return falha }
         defer { sqlite3_close(db) }
+        return corpo(db)
+    }
+
+    /// Número de telefone de uma conversa "…@lid", pelos contactos do WhatsApp.
+    static func telefone(lid: String) -> String? {
+        comCopia("ContactsV2.sqlite", nil) { db in
+            var st: OpaquePointer?
+            let sql = "SELECT ZWHATSAPPID FROM ZWAADDRESSBOOKCONTACT WHERE ZLID = ? AND ZWHATSAPPID LIKE '%@s.whatsapp.net' LIMIT 1"
+            guard sqlite3_prepare_v2(db, sql, -1, &st, nil) == SQLITE_OK else { return nil }
+            defer { sqlite3_finalize(st) }
+            sqlite3_bind_text(st, 1, lid, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            guard sqlite3_step(st) == SQLITE_ROW, let c = sqlite3_column_text(st, 0) else { return nil }
+            let tel = String(String(cString: c).split(separator: "@").first ?? "")
+            return tel.count >= 9 && tel.allSatisfy(\.isNumber) ? tel : nil
+        }
+    }
+
+    static func ultimas(jid: String, nome: String, limite: Int = 14) -> String {
+        comCopia("ChatStorage.sqlite", "") { db in
         let sql = """
         SELECT m.ZISFROMME, m.ZTEXT FROM ZWAMESSAGE m
         JOIN ZWACHATSESSION c ON c.Z_PK = m.ZCHATSESSION
@@ -296,6 +317,7 @@ enum WhatsAppBD {
             linhas.append("\(eu ? "Eu" : nome): \(t)")
         }
         return linhas.reversed().joined(separator: "\n")
+        }
     }
 }
 
