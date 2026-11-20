@@ -406,8 +406,8 @@ enum Envio {
             ? nil : "O Mail não deixou enviar. Autoriza a Cubo a controlar o Mail em Definições → Privacidade → Automação."
     }
 
-    /// Abre a conversa com o texto escrito e carrega em Enter.
-    /// Sem autorização de Acessibilidade fica só o rascunho aberto no WhatsApp.
+    /// Envia no WhatsApp sem o trazer para a frente: abre a conversa em segundo plano com o
+    /// texto escrito e carrega no botão «Enviar» por Acessibilidade. Quem está à frente fica à frente.
     static func whatsapp(telefone: String, texto: String) -> String? {
         var permitido = CharacterSet.alphanumerics
         permitido.insert(charactersIn: "-._~")
@@ -416,25 +416,115 @@ enum Envio {
             return "Texto inválido."
         }
         let opcoes = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-        let podeTeclar = AXIsProcessTrustedWithOptions(opcoes)
-        DispatchQueue.main.sync { _ = NSWorkspace.shared.open(url) }
-        guard podeTeclar else {
-            return "Abri o WhatsApp com a resposta escrita: carrega em Enter para enviar. (Para enviar sozinho, dá à Cubo autorização de Acessibilidade.)"
+        guard AXIsProcessTrustedWithOptions(opcoes) else {
+            return "Falta dar à Cubo autorização de Acessibilidade (Definições → Privacidade e Segurança → Acessibilidade). Nada foi enviado."
         }
-        Thread.sleep(forTimeInterval: 3)
-        DispatchQueue.main.sync {
-            _ = NSRunningApplication.runningApplications(withBundleIdentifier: AbrirOrigem.whatsapp).first?.activate()
+
+        // Quem estava à frente e se o WhatsApp estava escondido, para deixar tudo como estava
+        let (frente, waAntes): (NSRunningApplication?, NSRunningApplication?) = DispatchQueue.main.sync {
+            (NSWorkspace.shared.frontmostApplication,
+             NSRunningApplication.runningApplications(withBundleIdentifier: AbrirOrigem.whatsapp).first)
         }
-        Thread.sleep(forTimeInterval: 0.6)
-        let ativa = DispatchQueue.main.sync { NSWorkspace.shared.frontmostApplication?.bundleIdentifier?.lowercased() }
-        guard ativa == AbrirOrigem.whatsapp else {
-            return "O WhatsApp não ficou à frente; nada foi enviado. A resposta está escrita na conversa."
+        let estavaEscondido = waAntes?.isHidden ?? true
+        let semJanela = waAntes == nil
+
+        let cfg = NSWorkspace.OpenConfiguration()
+        cfg.activates = false
+        DispatchQueue.main.sync { NSWorkspace.shared.open(url, configuration: cfg) }
+
+        defer {
+            DispatchQueue.main.async {
+                let wa = NSRunningApplication.runningApplications(withBundleIdentifier: AbrirOrigem.whatsapp).first
+                if (estavaEscondido || semJanela) { wa?.hide() }
+                if let frente, frente.bundleIdentifier?.lowercased() != AbrirOrigem.whatsapp { frente.activate() }
+            }
         }
-        let fonte = CGEventSource(stateID: .hidSystemState)
-        for desce in [true, false] {
-            CGEvent(keyboardEventSource: fonte, virtualKey: 36, keyDown: desce)?.post(tap: .cghidEventTap)
+
+        // Se o WhatsApp insistir em vir para a frente, devolve logo a vista
+        func devolverVista() {
+            DispatchQueue.main.sync {
+                if NSWorkspace.shared.frontmostApplication?.bundleIdentifier?.lowercased() == AbrirOrigem.whatsapp,
+                   let frente, frente.bundleIdentifier?.lowercased() != AbrirOrigem.whatsapp {
+                    frente.activate()
+                }
+            }
+        }
+
+        // Espera que a caixa de mensagem tenha o nosso texto
+        let alvo = normalizar(texto)
+        var caixa: AXUIElement?
+        for _ in 0..<40 {
+            Thread.sleep(forTimeInterval: 0.25)
+            devolverVista()
+            guard let pid = NSRunningApplication.runningApplications(withBundleIdentifier: AbrirOrigem.whatsapp).first?.processIdentifier
+            else { continue }
+            let app = AXUIElementCreateApplication(pid)
+            if let c = Ax.procurar(app, papel: kAXTextAreaRole as String, valor: alvo) { caixa = c; break }
+        }
+        guard let caixa, let pid = NSRunningApplication.runningApplications(withBundleIdentifier: AbrirOrigem.whatsapp).first?.processIdentifier
+        else { return "O WhatsApp não abriu a conversa a tempo. Nada foi enviado." }
+
+        let app = AXUIElementCreateApplication(pid)
+        guard let botao = Ax.procurar(app, papel: kAXButtonRole as String, descricoes: ["enviar", "send"]) else {
+            return "Não encontrei o botão Enviar no WhatsApp. Nada foi enviado; a resposta ficou escrita na conversa."
+        }
+        AXUIElementPerformAction(botao, kAXPressAction as CFString)
+
+        // Confirma: a caixa fica vazia depois de enviar
+        for _ in 0..<12 {
+            Thread.sleep(forTimeInterval: 0.25)
+            devolverVista()
+            if normalizar(Ax.valor(caixa) ?? "") != alvo { return nil }
+        }
+        return "Carreguei em Enviar mas o texto continua na caixa do WhatsApp. Confirma na app."
+    }
+
+    static func normalizar(_ s: String) -> String {
+        s.replacingOccurrences(of: "\r", with: "\n")
+            .components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }.joined(separator: " ")
+    }
+}
+
+// MARK: - Acessibilidade (ler e carregar em botões de outra app sem a trazer para a frente)
+
+enum Ax {
+    static func atributo(_ e: AXUIElement, _ a: String) -> AnyObject? {
+        var v: AnyObject?
+        return AXUIElementCopyAttributeValue(e, a as CFString, &v) == .success ? v : nil
+    }
+    static func valor(_ e: AXUIElement) -> String? { atributo(e, kAXValueAttribute) as? String }
+
+    private static func limpo(_ s: String?) -> String {
+        (s ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "\u{200E}\u{200F} ")).lowercased()
+    }
+
+    /// Procura em largura (até ~3000 elementos) o primeiro elemento que satisfaz o teste.
+    private static func primeiro(_ raiz: AXUIElement, _ teste: (AXUIElement) -> Bool) -> AXUIElement? {
+        var fila: [AXUIElement] = (atributo(raiz, kAXWindowsAttribute) as? [AXUIElement]) ?? [raiz]
+        var vistos = 0
+        while !fila.isEmpty, vistos < 3000 {
+            let e = fila.removeFirst()
+            vistos += 1
+            if teste(e) { return e }
+            if let filhos = atributo(e, kAXChildrenAttribute) as? [AXUIElement] { fila.append(contentsOf: filhos) }
         }
         return nil
+    }
+
+    static func procurar(_ raiz: AXUIElement, papel: String, valor alvo: String) -> AXUIElement? {
+        primeiro(raiz) { e in
+            atributo(e, kAXRoleAttribute) as? String == papel
+                && Envio.normalizar(valor(e) ?? "") == alvo
+        }
+    }
+
+    static func procurar(_ raiz: AXUIElement, papel: String, descricoes: [String]) -> AXUIElement? {
+        primeiro(raiz) { e in
+            guard atributo(e, kAXRoleAttribute) as? String == papel else { return false }
+            let d = limpo(atributo(e, kAXDescriptionAttribute) as? String)
+            let t = limpo(atributo(e, kAXTitleAttribute) as? String)
+            return descricoes.contains(d) || descricoes.contains(t)
+        }
     }
 }
 
@@ -493,7 +583,7 @@ private struct CartaoResposta: View {
                     Text(e).font(.caption).foregroundStyle(.orange)
                 }
                 HStack {
-                    Text(r.envioDireto ? "Revê e edita se quiseres" : "Fica copiada; colas com ⌘V")
+                    Text(r.envioDireto ? "Envia em segundo plano, sem abrir a app" : "Fica copiada; colas com ⌘V")
                         .font(.caption2).foregroundStyle(.tertiary)
                     Spacer()
                     Button(r.envioDireto ? "Enviar" : "Copiar e abrir") { Respostas.shared.enviar(r.id) }
