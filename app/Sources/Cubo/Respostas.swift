@@ -425,17 +425,31 @@ enum Envio {
             (NSWorkspace.shared.frontmostApplication,
              NSRunningApplication.runningApplications(withBundleIdentifier: AbrirOrigem.whatsapp).first)
         }
-        let estavaEscondido = waAntes?.isHidden ?? true
-        let semJanela = waAntes == nil
+        let estavaEscondido = waAntes?.isHidden ?? false
+        let naoCorria = waAntes == nil
+        let janelasAntes = waAntes.map { Ax.janelas(pid: $0.processIdentifier).count } ?? 0
 
-        let cfg = NSWorkspace.OpenConfiguration()
-        cfg.activates = false
-        DispatchQueue.main.sync { NSWorkspace.shared.open(url, configuration: cfg) }
+        // O WhatsApp sem janela (fechada com o botão vermelho) não mostra a conversa:
+        // reabre a janela por trás, sem a trazer para a frente (como `open -g`).
+        if naoCorria || estavaEscondido || janelasAntes == 0 {
+            abrirPorTras(["-b", AbrirOrigem.whatsapp])
+            for _ in 0..<20 {
+                Thread.sleep(forTimeInterval: 0.25)
+                if let pid = pidWhatsApp, !Ax.janelas(pid: pid).isEmpty { break }
+            }
+        }
+        abrirPorTras([url.absoluteString])
 
         defer {
+            // Deixa o WhatsApp como estava: sem janela, escondido, ou fechado
+            if let pid = pidWhatsApp, janelasAntes == 0 || naoCorria {
+                for w in Ax.janelas(pid: pid) {
+                    if let b = Ax.atributo(w, kAXCloseButtonAttribute) { AXUIElementPerformAction(b as! AXUIElement, kAXPressAction as CFString) }
+                }
+            }
             DispatchQueue.main.async {
                 let wa = NSRunningApplication.runningApplications(withBundleIdentifier: AbrirOrigem.whatsapp).first
-                if (estavaEscondido || semJanela) { wa?.hide() }
+                if estavaEscondido { wa?.hide() }
                 if let frente, frente.bundleIdentifier?.lowercased() != AbrirOrigem.whatsapp { frente.activate() }
             }
         }
@@ -451,7 +465,7 @@ enum Envio {
         }
 
         // Espera que a caixa de mensagem tenha o nosso texto
-        let alvo = normalizar(texto)
+        let alvo = chave(texto)
         var caixa: AXUIElement?
         for _ in 0..<40 {
             Thread.sleep(forTimeInterval: 0.25)
@@ -474,9 +488,27 @@ enum Envio {
         for _ in 0..<12 {
             Thread.sleep(forTimeInterval: 0.25)
             devolverVista()
-            if normalizar(Ax.valor(caixa) ?? "") != alvo { return nil }
+            if chave(Ax.valor(caixa) ?? "") != alvo { return nil }
         }
         return "Carreguei em Enviar mas o texto continua na caixa do WhatsApp. Confirma na app."
+    }
+
+    private static var pidWhatsApp: pid_t? {
+        NSRunningApplication.runningApplications(withBundleIdentifier: AbrirOrigem.whatsapp).first?.processIdentifier
+    }
+
+    /// Abre uma app ou um link sem a trazer para a frente.
+    private static func abrirPorTras(_ args: [String]) {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        p.arguments = ["-g"] + args
+        try? p.run()
+        p.waitUntilExit()
+    }
+
+    /// Só letras e números: compara o texto sem tropeçar em emojis, espaços ou quebras de linha.
+    static func chave(_ s: String) -> String {
+        String(String.UnicodeScalarView(s.unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) })).lowercased()
     }
 
     static func normalizar(_ s: String) -> String {
@@ -493,6 +525,9 @@ enum Ax {
         return AXUIElementCopyAttributeValue(e, a as CFString, &v) == .success ? v : nil
     }
     static func valor(_ e: AXUIElement) -> String? { atributo(e, kAXValueAttribute) as? String }
+    static func janelas(pid: pid_t) -> [AXUIElement] {
+        (atributo(AXUIElementCreateApplication(pid), kAXWindowsAttribute) as? [AXUIElement]) ?? []
+    }
 
     private static func limpo(_ s: String?) -> String {
         (s ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "\u{200E}\u{200F} ")).lowercased()
@@ -514,7 +549,7 @@ enum Ax {
     static func procurar(_ raiz: AXUIElement, papel: String, valor alvo: String) -> AXUIElement? {
         primeiro(raiz) { e in
             atributo(e, kAXRoleAttribute) as? String == papel
-                && Envio.normalizar(valor(e) ?? "") == alvo
+                && Envio.chave(valor(e) ?? "") == alvo
         }
     }
 
