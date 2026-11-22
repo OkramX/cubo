@@ -96,6 +96,44 @@ struct CuboConfig {
         get { raw["sobre_mim"] as? String ?? "" }
         set { raw["sobre_mim"] = newValue }
     }
+    var pessoasVip: [String] {
+        get { raw["pessoas_vip"] as? [String] ?? [] }
+        set { raw["pessoas_vip"] = newValue }
+    }
+    /// Concentração automática durante as reuniões do Calendário
+    var reunioesAuto: Bool {
+        get { raw["reunioes_auto"] as? Bool ?? true }
+        set { raw["reunioes_auto"] = newValue }
+    }
+    var resumoManha: Bool {
+        get { raw["resumo_manha"] as? Bool ?? true }
+        set { raw["resumo_manha"] = newValue }
+    }
+    /// Minutos desde a meia-noite (ex.: 540 = 9h00)
+    var resumoManhaMin: Int {
+        get { (raw["resumo_manha_min"] as? NSNumber)?.intValue ?? 540 }
+        set { raw["resumo_manha_min"] = newValue }
+    }
+    var fimDia: Bool {
+        get { raw["fim_dia"] as? Bool ?? true }
+        set { raw["fim_dia"] = newValue }
+    }
+    var fimDiaMin: Int {
+        get { (raw["fim_dia_min"] as? NSNumber)?.intValue ?? 1080 }
+        set { raw["fim_dia_min"] = newValue }
+    }
+    var lembreteTreino: Bool {
+        get { raw["lembrete_treino"] as? Bool ?? true }
+        set { raw["lembrete_treino"] = newValue }
+    }
+    var treinoMin: Int {
+        get { (raw["treino_min"] as? NSNumber)?.intValue ?? 1110 }
+        set { raw["treino_min"] = newValue }
+    }
+    var relatorioSemanal: Bool {
+        get { raw["relatorio_semanal"] as? Bool ?? true }
+        set { raw["relatorio_semanal"] = newValue }
+    }
     var codigos: String {
         get { raw["codigos_verificacao"] as? String ?? "esconder" }
         set { raw["codigos_verificacao"] = newValue }

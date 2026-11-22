@@ -22,6 +22,11 @@ extension Delegado {
         a.cubo = { e.cubo }
         a.focoAte = { e.focoAte }
         a.focoDesde = { e.focoDesde }
+        a.focoNome = { e.focoReuniao }
+        a.humor = { e.humorCubo }
+        a.fimDia = { e.config.fimDia ? e.config.fimDiaMin : nil }
+        e.eventosAgora = { a.eventos }
+        Assistente.shared.ligar(estado: e, agenda: a)
         Extras.shared.aoMudar = { a.enviarResumo() }
         Pausa.shared.podeAvisar = { e.config.pausa && !e.emFoco }
         Pausa.shared.enviar = { dados in let c = e.cubo; Task { await c.notificar(dados) } }
@@ -41,6 +46,7 @@ struct MenuView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             ResumoDia()
+            PainelAssistente()
             ControloFoco()
             ControloSilencioMac()
             PainelRespostas()
@@ -92,10 +98,10 @@ struct MenuView: View {
 // MARK: - Janela principal
 
 enum Separador: String, CaseIterable, Identifiable {
-    case hoje = "Hoje", entrada = "Entrada", cubo = "Cubo"
+    case hoje = "Hoje", entrada = "Entrada", semana = "Semana", cubo = "Cubo"
     var id: String { rawValue }
     var icone: String {
-        switch self { case .hoje: "sun.max"; case .entrada: "tray.full"; case .cubo: "cube" }
+        switch self { case .hoje: "sun.max"; case .entrada: "tray.full"; case .semana: "chart.bar"; case .cubo: "cube" }
     }
 }
 
@@ -119,6 +125,7 @@ struct JanelaPrincipal: View {
             switch separador.v ?? .hoje {
             case .hoje: HojeView()
             case .entrada: EntradaView()
+            case .semana: SemanaView()
             case .cubo: CuboView()
             }
         }
@@ -327,8 +334,8 @@ struct ControloFoco: View {
             Image(systemName: "moon.fill").foregroundStyle(estado.emFoco ? Color.indigo : .secondary)
             if estado.emFoco, let f = estado.focoAte {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Concentração até \(f.formatted(date: .omitted, time: .shortened))")
-                        .font(.callout.weight(.semibold))
+                    Text(estado.focoReuniao.map { "Em reunião: \($0)" } ?? "Concentração até \(f.formatted(date: .omitted, time: .shortened))")
+                        .font(.callout.weight(.semibold)).lineLimit(1)
                     Text(estado.config.pessoasPrioritarias.isEmpty
                          ? "O cubo está em silêncio"
                          : "Só passam: \(estado.config.pessoasPrioritarias.joined(separator: ", "))")

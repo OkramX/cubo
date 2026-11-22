@@ -11,7 +11,13 @@ enum AtalhosGlobais {
     static let lista: [(teclas: String, descricao: String)] = [
         ("⌃⌥C", "Abrir a Cubo (em qualquer app)"),
         ("⌃⌥F", "Ligar ou desligar a Concentração (1 hora)"),
+        ("⌃⌥V", "Ditar uma resposta (ex.: «responde ao Tiago que chego às 8»)"),
     ]
+
+    static func adicionarVoz(_ acao: @escaping () -> Void) {
+        instalarHandler()
+        adicionar(id: 3, tecla: UInt32(kVK_ANSI_V), mods: UInt32(controlKey | optionKey), acao: acao)
+    }
 
     static func registar(abrir: @escaping () -> Void, foco: @escaping () -> Void) {
         instalarHandler()

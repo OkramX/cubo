@@ -18,6 +18,10 @@ enum Lembretes {
     }
 
     static func criar(titulo: String, notas: String, quando: Quando) async throws {
+        try await criar(titulo: titulo, notas: notas, data: quando.data)
+    }
+
+    static func criar(titulo: String, notas: String, data: Date?) async throws {
         guard try await store.requestFullAccessToReminders() else {
             throw NSError(domain: "Cubo", code: 1, userInfo: [NSLocalizedDescriptionKey:
                 "Sem acesso aos Lembretes. Ativa a Cubo em Definições do Sistema → Privacidade e Segurança → Lembretes."])
@@ -30,7 +34,7 @@ enum Lembretes {
                 "Não encontrei nenhuma lista nos Lembretes."])
         }
         r.calendar = lista
-        if let d = quando.data {
+        if let d = data {
             r.dueDateComponents = Calendar.current.dateComponents([.year, .month, .day], from: d)
         }
         try store.save(r, commit: true)

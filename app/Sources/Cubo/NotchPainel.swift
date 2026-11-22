@@ -125,6 +125,7 @@ final class ControladorNotch: NSObject {
         criarItem()
         criarPainel()
         n.fechar = { [weak self] in self?.fechar() }
+        ControladorNotch.atual = self
         // Preparar a vista (e o "abrir janela") logo no arranque, sem se ver
         painel.alphaValue = 0
         painel.orderFrontRegardless()
@@ -162,6 +163,9 @@ final class ControladorNotch: NSObject {
     }
 
     func alternar() { clicar() }
+    /// Abre o painel (se ainda não estiver aberto)
+    func mostrar() { if !n.aberto { abrir() } }
+    static weak var atual: ControladorNotch?
 
     @objc private func clicar() {
         n.aberto ? fechar() : abrir()
@@ -251,6 +255,8 @@ final class Delegado: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         TesteRespostas.correrSePedido()
         TesteCaixa.correrSePedido()
+        TesteAssistente.correrSePedido(estado)
+        if CommandLine.arguments.contains("--testar-assistente") { return }
         notch = ControladorNotch(estado: estado, agenda: agenda)
         ligar()
         TesteRespostas.exemplo { [weak self] in self?.notch?.alternar() }

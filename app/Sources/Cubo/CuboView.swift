@@ -145,6 +145,30 @@ struct CuboView: View {
             }
 
             Section {
+                Toggle("Concentração automática nas reuniões", isOn: liga(\.reunioesAuto))
+                HStack {
+                    Toggle("Resumo da manhã", isOn: liga(\.resumoManha))
+                    Spacer()
+                    HoraMinutos(minutos: liga(\.resumoManhaMin))
+                    Button("Agora") { Assistente.shared.fazerResumo() }.controlSize(.small)
+                }
+                HStack {
+                    Toggle("Contagem para o fim do dia", isOn: liga(\.fimDia))
+                    Spacer()
+                    HoraMinutos(minutos: liga(\.fimDiaMin))
+                }
+                HStack {
+                    Toggle("Lembrete do treino (1 h antes)", isOn: liga(\.lembreteTreino))
+                    Spacer()
+                    Text("treino às").foregroundStyle(.secondary)
+                    HoraMinutos(minutos: liga(\.treinoMin))
+                }
+                Toggle("Relatório da semana (sexta às 17h)", isOn: liga(\.relatorioSemanal))
+            } header: { Text("Assistente") } footer: {
+                Text("Reuniões: quando começa uma reunião do Calendário o cubo fica em silêncio e mostra «Em reunião»; no fim mostra o que entrou. Fim do dia: na última hora de trabalho (dias úteis) o cubo mostra um anel roxo. No notch podes perguntar (ex.: «o que me disse a Sara?») e ditar respostas com ⌃⌥V.")
+            }
+
+            Section {
                 Toggle("Preparar respostas a emails e WhatsApp", isOn: liga(\.respostas))
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Sobre ti e como respondes").font(.callout)
@@ -153,7 +177,7 @@ struct CuboView: View {
                         .lineLimit(2...5)
                 }
             } header: { Text("Respostas sugeridas") } footer: {
-                Text("Quando chega um email (Mail ou eM Client) ou uma mensagem de WhatsApp, o Claude escreve uma resposta e mostra-a no painel do notch. Nada é enviado sem carregares em «Enviar». Grupos de WhatsApp, newsletters e emails automáticos ficam de fora. No eM Client a resposta é copiada e a app abre para colares com ⌘V.")
+                Text("Quando chega um email (Mail ou eM Client) ou uma mensagem de WhatsApp, Teams ou Slack, o Claude escreve uma resposta e mostra-a no painel do notch. Nada é enviado sem carregares em «Enviar». Grupos de WhatsApp, newsletters e emails automáticos ficam de fora. O Claude vê a tua agenda para propor horas livres e sugere lembretes quando te pedem algo. No eM Client, Teams e Slack a resposta é copiada e a app abre para colares com ⌘V.")
             }
 
             Section("O que aparece no cubo") {
@@ -210,6 +234,16 @@ struct CuboView: View {
                         Image(systemName: "star.fill").foregroundStyle(.yellow)
                         Text(p)
                         Spacer()
+                        let ehVip = estado.config.pessoasVip.contains(p)
+                        Button {
+                            if ehVip { estado.config.pessoasVip.removeAll { $0 == p } } else { estado.config.pessoasVip.append(p) }
+                            estado.gravarConfig()
+                        } label: {
+                            Label("VIP", systemImage: ehVip ? "crown.fill" : "crown")
+                                .foregroundStyle(ehVip ? Color.orange : .secondary)
+                        }
+                        .buttonStyle(.borderless)
+                        .help("VIP: som diferente e o cubo pisca com moldura vermelha")
                         Button { estado.removerPessoa(p) } label: { Image(systemName: "minus.circle") }
                             .buttonStyle(.borderless)
                     }
@@ -235,7 +269,7 @@ struct CuboView: View {
             } header: {
                 Text("Concentração")
             } footer: {
-                Text("Durante a Concentração o cubo fica em silêncio, exceto para estas pessoas. Tudo continua a aparecer na Entrada.")
+                Text("Durante a Concentração o cubo fica em silêncio, exceto para estas pessoas. Tudo continua a aparecer na Entrada. As marcadas como VIP (coroa) tocam um som diferente e o cubo pisca com uma moldura vermelha.")
             }
 
             Section {
@@ -324,5 +358,18 @@ struct CuboView: View {
         f.allowedUnits = s >= 3600 ? [.day, .hour, .minute] : [.minute, .second]
         f.unitsStyle = .short
         return f.string(from: TimeInterval(s)) ?? "\(s) s"
+    }
+}
+
+
+/// Escolher uma hora (guardada como minutos desde a meia-noite)
+struct HoraMinutos: View {
+    @Binding var minutos: Int
+    var body: some View {
+        DatePicker("", selection: Binding(
+            get: { Calendar.current.date(bySettingHour: minutos / 60, minute: minutos % 60, second: 0, of: Date()) ?? Date() },
+            set: { let c = Calendar.current.dateComponents([.hour, .minute], from: $0); minutos = (c.hour ?? 0) * 60 + (c.minute ?? 0) }),
+                   displayedComponents: .hourAndMinute)
+            .labelsHidden().fixedSize()
     }
 }

@@ -1,3 +1,4 @@
+import EventKit
 import AppKit
 import Foundation
 import Network
@@ -74,6 +75,7 @@ final class AppState: ObservableObject {
         timerCubo = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.verificarFimDoFoco()
+                self?.verificarReunioes()
                 self?.lerSilencioMac()
                 await self?.atualizarEstadoCubo()
                 self?.verificarScriptAntigo()
@@ -140,16 +142,16 @@ final class AppState: ObservableObject {
             if atual < ultimo { ultimo = atual }   // o macOS limpou a base de dados
             let novos = try bd.registos(depoisDe: ultimo)
             guard !novos.isEmpty else { return }
-            var tocar = false
+            var tocar = false, tocarVip = false
             for r in novos {
                 ultimo = max(ultimo, r.recID)
                 guard let i = item(de: r) else { continue }
                 itens.insert(i, at: 0)
                 enviarParaCubo(i)
                 Respostas.shared.considerar(i)
-                if !emFoco || prioritaria(i) { tocar = true }
+                if vip(i) { tocarVip = true } else if !emFoco || prioritaria(i) { tocar = true }
             }
-            if tocar && config.som { Som.tocar() }
+            if tocarVip && config.som { Som.tocarVip() } else if tocar && config.som { Som.tocar() }
             appsConhecidas = bd.appsComNotificacoes()
             guardarEntrada()
         } catch {
@@ -172,9 +174,9 @@ final class AppState: ObservableObject {
     private func enviarParaCubo(_ i: ItemEntrada) {
         guard !scriptAntigoAtivo, let dados = Preparar.paraCubo(i, cfg: config) else { return }
         if emFoco && !prioritaria(i) { return }   // fica só na Entrada
-        let c = cubo
+        let c = cubo, ehVip = vip(i)
         Task {
-            let ok = await c.notificar(dados)
+            let ok = await c.notificar(dados, vip: ehVip)
             self.ultimoEnvioFalhou = !ok
         }
     }
@@ -240,7 +242,16 @@ final class AppState: ObservableObject {
 
     var emFoco: Bool { (focoAte ?? .distantPast) > Date() }
 
+    func vip(_ i: ItemEntrada) -> Bool {
+        let quem = Preparar.ascii(i.titulo + " " + i.subtitulo).lowercased()
+        return config.pessoasVip.contains { p in
+            let n = Preparar.ascii(p).lowercased()
+            return !n.isEmpty && quem.contains(n)
+        }
+    }
+
     func prioritaria(_ i: ItemEntrada) -> Bool {
+        if vip(i) { return true }
         let quem = Preparar.ascii(i.titulo + " " + i.subtitulo).lowercased()
         return config.pessoasPrioritarias.contains { p in
             let n = Preparar.ascii(p).lowercased()
@@ -248,7 +259,51 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Nome da reunião quando a Concentração foi ligada automaticamente por uma reunião
+    @Published var focoReuniao: String? = UserDefaults.standard.string(forKey: "focoReuniao") {
+        didSet { UserDefaults.standard.set(focoReuniao, forKey: "focoReuniao") }
+    }
+    /// Eventos de hoje (vem da Agenda)
+    var eventosAgora: () -> [EKEvent] = { [] }
+    private var ultimaReuniaoAuto = UserDefaults.standard.string(forKey: "ultimaReuniaoAuto") ?? ""
+
+    /// Liga a Concentração quando começa uma reunião (se a opção estiver ligada).
+    func verificarReunioes() {
+        guard config.reunioesAuto, !emFoco else { return }
+        let agora = Date()
+        guard let ev = eventosAgora().first(where: {
+            !$0.isAllDay && $0.startDate <= agora && $0.endDate > agora
+                && $0.endDate.timeIntervalSince($0.startDate) <= 4 * 3600
+                && $0.availability != .free
+        }) else { return }
+        let id = "\(ev.eventIdentifier ?? ev.title ?? "")|\(Int(ev.startDate.timeIntervalSince1970))"
+        guard id != ultimaReuniaoAuto else { return }   // terminaste-a à mão: não volta a ligar
+        ultimaReuniaoAuto = id
+        UserDefaults.standard.set(id, forKey: "ultimaReuniaoAuto")
+        focoDesde = Date()
+        focoReuniao = ev.title ?? "Reunião"
+        focoAte = ev.endDate
+    }
+
+    /// Olhos do cubo: 1 contentes (tudo visto), 2 com sono (noite), 3 preocupados (muito por ver)
+    var humorCubo: Int {
+        let h = Calendar.current.component(.hour, from: Date())
+        if h >= 23 || h < 7 { return 2 }
+        if porVer.count >= 10 { return 3 }
+        if porVer.isEmpty { return 1 }
+        return 0
+    }
+
+    /// Sessões de Concentração terminadas (para o relatório da semana)
+    static func registarFoco(_ desde: Date, _ ate: Date) {
+        var l = UserDefaults.standard.array(forKey: "registoFoco") as? [[Double]] ?? []
+        l.append([desde.timeIntervalSince1970, ate.timeIntervalSince1970])
+        l = l.filter { $0[1] > Date().timeIntervalSince1970 - 60 * 86400 }
+        UserDefaults.standard.set(l, forKey: "registoFoco")
+    }
+
     func comecarFoco(minutos: Int) {
+        focoReuniao = nil
         if !emFoco { focoDesde = Date() }
         focoAte = Date().addingTimeInterval(TimeInterval(minutos * 60))
     }
@@ -258,16 +313,28 @@ final class AppState: ObservableObject {
     }
 
     func terminarFoco() {
-        let desde = focoDesde
+        let desde = focoDesde, reuniao = focoReuniao
         focoAte = nil
         focoDesde = nil
+        focoReuniao = nil
         guard let desde else { return }
-        let perdidas = itens.filter { !$0.visto && $0.quando >= desde && !prioritaria($0) }.count
-        guard perdidas > 0, !scriptAntigoAtivo else { return }
+        Self.registarFoco(desde, Date())
+        let perdidas = itens.filter { !$0.visto && $0.quando >= desde && !prioritaria($0) }
+        guard !scriptAntigoAtivo else { return }
         let c = cubo
+        if reuniao != nil {
+            // No fim da reunião: o que entrou entretanto
+            var quem: [String] = []
+            for i in perdidas where !i.titulo.isEmpty && !quem.contains(i.titulo) { quem.append(i.titulo) }
+            let texto = perdidas.isEmpty ? "Nada de novo. Bom trabalho!"
+                : "\(perdidas.count) por ver: " + quem.prefix(3).joined(separator: ", ") + (quem.count > 3 ? "..." : "")
+            Task { await c.notificar(["app": "Cubo", "titulo": "Fim da reuniao", "texto": Preparar.ascii(texto)]) }
+            return
+        }
+        guard !perdidas.isEmpty else { return }
         Task {
             await c.notificar(["app": "Cubo", "titulo": "Fim do foco",
-                               "texto": "\(perdidas) \(perdidas == 1 ? "notificacao" : "notificacoes") por ver"])
+                               "texto": "\(perdidas.count) \(perdidas.count == 1 ? "notificacao" : "notificacoes") por ver"])
         }
     }
 

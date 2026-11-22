@@ -19,6 +19,9 @@ final class Agenda: ObservableObject {
     var cubo: () -> CubeClient = { CubeClient(base: "", token: "") }
     var focoAte: () -> Date? = { nil }
     var focoDesde: () -> Date? = { nil }
+    var focoNome: () -> String? = { nil }
+    var humor: () -> Int = { 0 }
+    var fimDia: () -> Int? = { nil }     // minutos desde a meia-noite, ou nil se desligado
 
     init() {
         NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: store, queue: .main) { [weak self] _ in
@@ -75,6 +78,21 @@ final class Agenda: ObservableObject {
         }
     }
 
+    /// Agenda dos próximos dias em texto, para o Claude responder com disponibilidade real.
+    nonisolated static func textoAgenda(dias: Int = 7) -> String {
+        let store = Lembretes.store
+        guard EKEventStore.authorizationStatus(for: .event) == .fullAccess else { return "" }
+        let ini = Date(), fim = Calendar.current.date(byAdding: .day, value: dias, to: ini)!
+        let ev = store.events(matching: store.predicateForEvents(withStart: ini, end: fim, calendars: nil))
+            .filter { !$0.isAllDay && $0.availability != .free }.sorted { $0.startDate < $1.startDate }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "pt_PT")
+        f.dateFormat = "EEEE d/M HH:mm"
+        let h = DateFormatter(); h.dateFormat = "HH:mm"
+        return ev.prefix(40).map { "- \(f.string(from: $0.startDate))–\(h.string(from: $0.endDate)): \($0.title ?? "ocupado")" }
+            .joined(separator: "\n")
+    }
+
     // MARK: Ações
 
     func concluir(_ r: EKReminder) {
@@ -109,6 +127,13 @@ final class Agenda: ObservableObject {
         if let f = focoAte(), f > Date() {
             dados["foco_ate"] = Int(f.timeIntervalSince1970)
             if let d = focoDesde() { dados["foco_desde"] = Int(d.timeIntervalSince1970) }
+            if let n = focoNome() { dados["foco_nome"] = Preparar.ascii("Em reuniao: " + n) }
+        }
+        dados["humor"] = humor()
+        let cal = Calendar.current
+        if let m = fimDia(), !cal.isDateInWeekend(Date()),
+           let fim = cal.date(bySettingHour: m / 60, minute: m % 60, second: 0, of: Date()) {
+            dados["fim_dia"] = Int(fim.timeIntervalSince1970)
         }
         let x = Extras.shared
         dados["treino"] = Preparar.ascii(x.treino)

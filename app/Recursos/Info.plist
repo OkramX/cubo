@@ -18,6 +18,8 @@
   <key>NSCalendarsFullAccessUsageDescription</key><string>A Cubo mostra a tua agenda de hoje e a próxima reunião no cubo.</string>
   <key>NSCalendarsUsageDescription</key><string>A Cubo mostra a tua agenda de hoje e a próxima reunião no cubo.</string>
   <key>NSAppleEventsUsageDescription</key><string>A Cubo lê o email completo no Mail e envia as respostas que aprovares.</string>
+  <key>NSMicrophoneUsageDescription</key><string>A Cubo ouve o que ditas (⌃⌥V) para preparar uma resposta.</string>
+  <key>NSSpeechRecognitionUsageDescription</key><string>A Cubo transforma em texto o que ditas para preparar uma resposta.</string>
   <key>NSLocalNetworkUsageDescription</key><string>A Cubo fala com o cubo de notificações na tua rede.</string>
   <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/><key>NSAllowsArbitraryLoads</key><true/></dict>
 </dict>

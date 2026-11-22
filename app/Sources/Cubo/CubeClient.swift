@@ -61,9 +61,11 @@ struct CubeClient {
     }
 
     /// Envia uma notificação com até 5 tentativas. Devolve false se o token for recusado ou o cubo não responder.
-    func notificar(_ dados: [String: String]) async -> Bool {
+    func notificar(_ dados: [String: String], vip: Bool = false) async -> Bool {
+        var corpo: [String: Any] = dados
+        if vip { corpo["vip"] = true }
         for tentativa in 1...5 {
-            let c = await enviar("/notify", corpo: dados)
+            let c = await enviar("/notify", corpo: corpo)
             if c == 200 { return true }
             if c == 401 { return false }
             try? await Task.sleep(nanoseconds: UInt64(min(2 * tentativa, 8)) * 1_000_000_000)

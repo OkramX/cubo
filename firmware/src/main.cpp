@@ -25,7 +25,7 @@
 #include "config.h"
 #include "icones.h"
 
-#define FW_VERSAO "1.7.0"
+#define FW_VERSAO "1.8.0"
 
 // ---- Ecrã -------------------------------------------------------------
 Adafruit_ST7789 tft(-1, PIN_TFT_DC, PIN_TFT_RST);   // sem CS
@@ -42,7 +42,7 @@ ESP8266WebServer server(80);
 ESP8266HTTPUpdateServer httpUpdater;
 
 // ---- Estado -----------------------------------------------------------
-struct Alerta { String app; String titulo; String texto; };
+struct Alerta { String app; String titulo; String texto; bool vip = false; };
 const uint8_t FILA_MAX = 6;
 Alerta  fila[FILA_MAX];
 uint8_t filaInicio = 0, filaTam = 0;
@@ -64,6 +64,9 @@ struct Resumo {
   String   treino, forma;    // treino planeado para hoje e forma (vindos da OkramX)
   String   tempo;            // ex.: "18C  12/21"
   String   tempoIcone;       // sol, lua, nuvem, chuva, trovoada, neve, nevoeiro
+  String   focoNome;         // texto do anel azul (ex.: "Em reuniao"); vazio = "Concentracao"
+  uint32_t fimDia = 0;       // hora Unix do fim do dia de trabalho (0 = desligado)
+  uint8_t  humor = 0;        // olhos: 0 normal, 1 contentes, 2 com sono, 3 preocupados
   uint32_t recebidoMs = 0;
   bool     valido = false;
 } resumo;
@@ -496,7 +499,7 @@ Pose poseEm(uint32_t t) {
 }
 
 // Desenha um olho na tela (canvas) e copia-a para o ecrã — sem piscar
-void desenharOlho(int lado, const Pose& p, uint16_t cor, uint32_t t) {
+void desenharOlho(int lado, const Pose& p, uint16_t cor, uint32_t t, uint8_t humor) {
   GFXcanvas16& c = *telaOlho;
   c.fillScreen(COR_FUNDO);
   float salto = p.feliz > 0 ? sinf(t / 170.0f) * 2.0f * p.feliz : 0;
@@ -509,6 +512,13 @@ void desenharOlho(int lado, const Pose& p, uint16_t cor, uint32_t t) {
 
   if (h > 24 && p.feliz < 0.5f)                       // brilho no olho
     c.fillCircle(cx + 11, cy - h / 2 + 13, 6, ST77XX_WHITE);
+
+  if (humor == 3 && h > 20) {                         // preocupados: pálpebra inclinada por fora
+    int16_t topo = cy - h / 2, ex = lado == 0 ? cx - w / 2 - 2 : cx + w / 2 + 2, ix = lado == 0 ? cx + w / 2 : cx - w / 2;
+    c.fillTriangle(ex, topo - 2, ex, topo + h / 2, ix, topo - 2, COR_FUNDO);
+  }
+  if (humor == 2 && h > 8)                            // com sono: pálpebra pesada por cima
+    c.fillRect(cx - w / 2 - 2, cy - h / 2 - 2, w + 4, h / 2 + 2, COR_FUNDO);
 
   if (p.feliz > 0.01f) {                              // olhos sorridentes: um arco "^"
     int16_t desce = (int16_t)((1.0f - p.feliz) * 34);
@@ -554,9 +564,13 @@ void animarOlhos(uint32_t agora) {
     return;
   }
   Pose p = poseEm(t);
-  uint16_t cor = OLHOS_CORES[corOlhos];
-  desenharOlho(0, p, cor, t);
-  desenharOlho(1, p, cor, t);
+  uint8_t humor = resumoAtivo() ? resumo.humor : 0;
+  if (humor == 1 && t > 600 && t < 5600) p.feliz = max(p.feliz, 1.0f);    // contentes: sorriem quase sempre
+  if (humor == 2) { p.gx *= 0.3f; p.gy += 6; }                             // com sono: olham para baixo
+  if (humor == 3) { p.gx *= 1.3f; p.feliz = 0; }                           // preocupados: olham à volta
+  uint16_t cor = humor == 2 ? 0x8C71 : OLHOS_CORES[corOlhos];
+  desenharOlho(0, p, cor, t, humor);
+  desenharOlho(1, p, cor, t, humor);
 }
 
 void desenharRelogio(bool tudo) {
@@ -719,7 +733,7 @@ void desenharTempo(const String& ic, int16_t x, int16_t y) {
 // =====================================================================
 //  Anel: contagem para a reunião e tempo de Concentração
 // =====================================================================
-enum ModoAnel { ANEL_NENHUM, ANEL_REUNIAO, ANEL_FOCO };
+enum ModoAnel { ANEL_NENHUM, ANEL_REUNIAO, ANEL_FOCO, ANEL_DIA };
 const int16_t ANEL_CX = 120, ANEL_CY = 112, ANEL_RE = 82, ANEL_RI = 70;
 const uint16_t COR_ANEL_FUNDO = 0x2124;
 
@@ -728,6 +742,7 @@ ModoAnel modoAnel() {
   uint32_t agora = (uint32_t)time(nullptr);
   if (resumo.evento.length() && resumo.inicio > agora && resumo.inicio - agora <= 600) return ANEL_REUNIAO;
   if (resumo.focoAte > agora) return ANEL_FOCO;
+  if (resumo.fimDia > agora && resumo.fimDia - agora <= 3600) return ANEL_DIA;
   return ANEL_NENHUM;
 }
 
@@ -754,11 +769,16 @@ void desenharAnel(ModoAnel modo, bool tudo) {
     bool pisca = restante <= 60 && (agora % 2);
     cor = restante > 300 ? 0x2FE5 : restante > 60 ? 0xFC60 : (pisca ? 0x6000 : 0xF800);
     rotulo = resumo.evento;
+  } else if (modo == ANEL_DIA) {
+    total = 3600;
+    restante = resumo.fimDia - agora;
+    cor = 0xC99F;
+    rotulo = "Fim do dia";
   } else {
     restante = resumo.focoAte - agora;
     total = resumo.focoDesde && resumo.focoDesde < resumo.focoAte ? resumo.focoAte - resumo.focoDesde : max<uint32_t>(restante, 3600);
     cor = 0x5D9F;
-    rotulo = "Concentracao";
+    rotulo = resumo.focoNome.length() ? resumo.focoNome : String("Concentracao");
   }
   if (restante > total) restante = total;
   float angulo = 360.0f * restante / total;
@@ -798,7 +818,7 @@ void desenharAnel(ModoAnel modo, bool tudo) {
     tft.fillRect(0, 204, LARG, 20, COR_FUNDO);
     const int maxChars = LARG / 12;
     if ((int)rotulo.length() > maxChars) rotulo = rotulo.substring(0, maxChars - 1) + ".";
-    centrado(rotulo, 206, 2, modo == ANEL_REUNIAO ? COR_TEXTO : 0x5D9F, COR_FUNDO);
+    centrado(rotulo, 206, 2, modo == ANEL_REUNIAO ? COR_TEXTO : cor, COR_FUNDO);
   }
 }
 
@@ -813,6 +833,9 @@ void desenharAlerta(const Alerta& a) {
   if (a.titulo.length()) y = quebrado(a.titulo, 10, y, 3, COR_TEXTO, 2) + 4;
   if (a.texto.length())  quebrado(a.texto, 10, y, 2, COR_SUAVE, 2);
 
+  if (a.vip) {                                        // pessoa VIP: moldura vermelha
+    for (int k = 0; k < 4; k++) tft.drawRect(k, k, LARG - 2 * k, LARG - 2 * k, 0xF800);
+  }
   if (filaTam > 1) {
     String mais = "+" + String(filaTam - 1) + " a seguir";
     centrado(mais, 218, 2, COR_SUAVE, COR_FUNDO);
@@ -891,7 +914,8 @@ void atualizarEcra() {
     }
   } else {
     const uint32_t dt = agora - alertaDesde;
-    if (dt < PISCAR_MS) definirBrilho(((dt / 300) % 2 == 0) ? 100 : 5);
+    const bool vip = filaTam > 0 && fila[filaInicio].vip;
+    if (dt < (vip ? PISCAR_MS * 3 : PISCAR_MS)) definirBrilho(((dt / (vip ? 180 : 300)) % 2 == 0) ? 100 : 5);
     else                definirBrilho(max(brilhoAlvo(), 60));
 
     if (dt >= (uint32_t)ALERTA_SEGUNDOS * 1000UL) {
@@ -950,6 +974,7 @@ void handleNotify() {
   a.app    = paraAscii(String((const char*)(doc["app"] | ""))).substring(0, 40);
   a.titulo = paraAscii(String((const char*)(doc["titulo"] | ""))).substring(0, 160);
   a.texto  = paraAscii(String((const char*)(doc["texto"] | ""))).substring(0, 240);
+  a.vip    = doc["vip"] | false;
   adicionarAlerta(a);
   responderOk();
 }
@@ -978,6 +1003,9 @@ void handleResumo() {
   resumo.forma      = paraAscii(String((const char*)(doc["forma"] | ""))).substring(0, 40);
   resumo.tempo      = paraAscii(String((const char*)(doc["tempo"] | ""))).substring(0, 16);
   resumo.tempoIcone = String((const char*)(doc["tempo_icone"] | ""));
+  resumo.focoNome   = paraAscii(String((const char*)(doc["foco_nome"] | ""))).substring(0, 20);
+  resumo.fimDia     = doc["fim_dia"] | 0;
+  resumo.humor      = doc["humor"] | 0;
   resumo.recebidoMs = millis();
   resumo.valido     = true;
   ultimoMinuto = -1;   // redesenha só as linhas do relógio, sem piscar o ecrã

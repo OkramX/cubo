@@ -15,6 +15,13 @@ enum Som {
         return s
     }()
 
+    /// Som diferente para as pessoas VIP
+    static func tocarVip() {
+        let s = NSSound(named: "Hero") ?? NSSound(named: "Glass")
+        s?.volume = 1
+        s?.play()
+    }
+
     static func tocar() {
         guard let s = som else { return }
         if s.isPlaying { s.stop() }
