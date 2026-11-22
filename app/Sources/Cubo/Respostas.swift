@@ -423,7 +423,7 @@ enum Envio {
         // Quem estava à frente e se o WhatsApp estava escondido, para deixar tudo como estava
         let (frente, waAntes): (NSRunningApplication?, NSRunningApplication?) = DispatchQueue.main.sync {
             (NSWorkspace.shared.frontmostApplication,
-             NSRunningApplication.runningApplications(withBundleIdentifier: AbrirOrigem.whatsapp).first)
+             AbrirOrigem.appWhatsApp)
         }
         let estavaEscondido = waAntes?.isHidden ?? false
         let naoCorria = waAntes == nil
@@ -448,7 +448,7 @@ enum Envio {
                 }
             }
             DispatchQueue.main.async {
-                let wa = NSRunningApplication.runningApplications(withBundleIdentifier: AbrirOrigem.whatsapp).first
+                let wa = AbrirOrigem.appWhatsApp
                 if estavaEscondido { wa?.hide() }
                 if let frente, frente.bundleIdentifier?.lowercased() != AbrirOrigem.whatsapp { frente.activate() }
             }
@@ -470,12 +470,12 @@ enum Envio {
         for _ in 0..<40 {
             Thread.sleep(forTimeInterval: 0.25)
             devolverVista()
-            guard let pid = NSRunningApplication.runningApplications(withBundleIdentifier: AbrirOrigem.whatsapp).first?.processIdentifier
+            guard let pid = AbrirOrigem.appWhatsApp?.processIdentifier
             else { continue }
             let app = AXUIElementCreateApplication(pid)
             if let c = Ax.procurar(app, papel: kAXTextAreaRole as String, valor: alvo) { caixa = c; break }
         }
-        guard let caixa, let pid = NSRunningApplication.runningApplications(withBundleIdentifier: AbrirOrigem.whatsapp).first?.processIdentifier
+        guard let caixa, let pid = AbrirOrigem.appWhatsApp?.processIdentifier
         else { return "O WhatsApp não abriu a conversa a tempo. Nada foi enviado." }
 
         let app = AXUIElementCreateApplication(pid)
@@ -485,16 +485,27 @@ enum Envio {
         AXUIElementPerformAction(botao, kAXPressAction as CFString)
 
         // Confirma: a caixa fica vazia depois de enviar
-        for _ in 0..<12 {
-            Thread.sleep(forTimeInterval: 0.25)
-            devolverVista()
-            if chave(Ax.valor(caixa) ?? "") != alvo { return nil }
+        func enviou() -> Bool {
+            for _ in 0..<12 {
+                Thread.sleep(forTimeInterval: 0.25)
+                devolverVista()
+                if chave(Ax.valor(caixa) ?? "") != alvo { return true }
+            }
+            return false
         }
+        if enviou() { return nil }
+        // Plano B: Enter enviado só ao WhatsApp (sem o trazer para a frente)
+        AXUIElementSetAttributeValue(caixa, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        let fonte = CGEventSource(stateID: .hidSystemState)
+        for desce in [true, false] {
+            CGEvent(keyboardEventSource: fonte, virtualKey: 36, keyDown: desce)?.postToPid(pid)
+        }
+        if enviou() { return nil }
         return "Carreguei em Enviar mas o texto continua na caixa do WhatsApp. Confirma na app."
     }
 
     private static var pidWhatsApp: pid_t? {
-        NSRunningApplication.runningApplications(withBundleIdentifier: AbrirOrigem.whatsapp).first?.processIdentifier
+        AbrirOrigem.appWhatsApp?.processIdentifier
     }
 
     /// Abre uma app ou um link sem a trazer para a frente.
@@ -667,5 +678,21 @@ enum TesteRespostas {
         else { return }
         Respostas.shared.considerar(i, pedido: true)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { abrir() }
+    }
+}
+
+// Cubo --testar-caixa "texto": procura a caixa do WhatsApp com esse texto e o botão Enviar (não carrega)
+enum TesteCaixa {
+    static func correrSePedido() {
+        guard let k = CommandLine.arguments.firstIndex(of: "--testar-caixa"), k + 1 < CommandLine.arguments.count else { return }
+        let alvo = Envio.chave(CommandLine.arguments[k + 1])
+        print("confiável:", AXIsProcessTrusted())
+        guard let pid = AbrirOrigem.appWhatsApp?.processIdentifier
+        else { print("WhatsApp não corre"); exit(0) }
+        let app = AXUIElementCreateApplication(pid)
+        print("janelas:", Ax.janelas(pid: pid).count)
+        print("caixa:", Ax.procurar(app, papel: kAXTextAreaRole as String, valor: alvo) != nil)
+        print("botão:", Ax.procurar(app, papel: kAXButtonRole as String, descricoes: ["enviar", "send"]) != nil)
+        exit(0)
     }
 }

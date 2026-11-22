@@ -250,6 +250,7 @@ final class Delegado: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         TesteRespostas.correrSePedido()
+        TesteCaixa.correrSePedido()
         notch = ControladorNotch(estado: estado, agenda: agenda)
         ligar()
         TesteRespostas.exemplo { [weak self] in self?.notch?.alternar() }

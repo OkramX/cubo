@@ -5,6 +5,11 @@ import ApplicationServices
 enum AbrirOrigem {
     static let whatsapp = "net.whatsapp.whatsapp"
 
+    /// A app WhatsApp a correr (o identificador real é "net.whatsapp.WhatsApp"; compara sem maiúsculas).
+    static var appWhatsApp: NSRunningApplication? {
+        NSWorkspace.shared.runningApplications.first { $0.bundleIdentifier?.lowercased() == whatsapp }
+    }
+
     static func abrir(_ i: ItemEntrada, senao abrirApp: () -> Void) {
         // 1) Link direto deixado pela própria app (ex.: Calendário)
         if let l = i.link, let u = URL(string: l), NSWorkspace.shared.open(u) { return }
