@@ -385,7 +385,7 @@ enum Osa {
 // MARK: - Envio
 
 enum Envio {
-    /// Responde no Mail à mensagem original (fica na mesma conversa, com a conta certa).
+    /// Responde no Mail à mensagem original (mesma conversa, conta certa), em segundo plano.
     static func mail(id: String, texto: String) -> String? {
         let script = """
         on run argv
@@ -393,9 +393,12 @@ enum Envio {
             set t to item 2 of argv
             tell application "Mail"
                 set m to first message of inbox whose message id is mid
-                set r to reply m with opening window
-                delay 1
-                set content of r to t
+                -- sem abrir janela: o Mail fica atrás e nada aparece no ecrã
+                set q to content of m
+                if length of q > 3000 then set q to text 1 thru 3000 of q
+                set cab to "Em " & ((date received of m) as string) & ", " & (sender of m) & " escreveu:"
+                set r to reply m without opening window
+                set content of r to t & return & return & cab & return & q
                 delay 0.5
                 send r
             end tell

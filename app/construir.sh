@@ -14,5 +14,14 @@ cp .build/release/Cubo "$APP/Contents/MacOS/Cubo"
 cp Recursos/Info.plist "$APP/Contents/Info.plist"
 iconutil -c icns "$IS" -o "$APP/Contents/Resources/Cubo.icns"
 cp Recursos/chegou.wav "$APP/Contents/Resources/chegou.wav"
-codesign --force --sign - --identifier pt.cubo.app "$APP"
+# Assinatura fixa (porta-chaves local em Assinatura/, fora do git): assim o macOS
+# lembra-se das autorizações (Acesso Total ao Disco, Acessibilidade) entre atualizações.
+KC="$PWD/Assinatura/cubo.keychain-db"
+if [ -f "$KC" ] && [ -f Assinatura/.senha-keychain ]; then
+  security unlock-keychain -p "$(cat Assinatura/.senha-keychain)" "$KC"
+  ID=$(security find-identity -p codesigning "$KC" | awk '/Cubo Assinatura Local/ {print $2; exit}')
+  codesign --force --keychain "$KC" --sign "$ID" --identifier pt.cubo.app "$APP"
+else
+  codesign --force --sign - --identifier pt.cubo.app "$APP"
+fi
 echo "Instalada em $APP"
