@@ -43,7 +43,7 @@ final class Extras: ObservableObject {
     }
 
     private func atualizarTreino() async {
-        guard let exe = Self.executavelOkramX() else { treino = ""; forma = ""; return }
+        guard !Edicao.semCubo, let exe = Self.executavelOkramX() else { treino = ""; forma = ""; return }
         let resultado = await Task.detached { () -> (Any?, Any?) in
             let mcp = ClienteMCP(executavel: exe)
             defer { mcp.terminar() }

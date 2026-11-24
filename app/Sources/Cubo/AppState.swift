@@ -162,6 +162,7 @@ final class AppState: ObservableObject {
     }
 
     private func item(de r: NotificationDB.Registo) -> ItemEntrada? {
+        if r.bundle == Bundle.main.bundleIdentifier { return nil }   // os avisos da própria Cubo
         guard let nome = config.nome(para: r.bundle),
               let info = NotificationDB.decodificar(r.data) else { return nil }
         if info.titulo.isEmpty && info.texto.isEmpty && info.subtitulo.isEmpty { return nil }
@@ -172,7 +173,7 @@ final class AppState: ObservableObject {
     }
 
     private func enviarParaCubo(_ i: ItemEntrada) {
-        guard !scriptAntigoAtivo, let dados = Preparar.paraCubo(i, cfg: config) else { return }
+        guard !Edicao.semCubo, !scriptAntigoAtivo, let dados = Preparar.paraCubo(i, cfg: config) else { return }
         if emFoco && !prioritaria(i) { return }   // fica só na Entrada
         let c = cubo, ehVip = vip(i)
         Task {
@@ -367,6 +368,7 @@ final class AppState: ObservableObject {
     // MARK: Cubo
 
     func atualizarEstadoCubo() async {
+        if Edicao.semCubo { return }
         var e = await cubo.estado()
         if e == nil, Date().timeIntervalSince(ultimaProcura) > 60 {
             e = await procurarCubo()

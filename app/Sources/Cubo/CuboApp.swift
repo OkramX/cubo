@@ -122,8 +122,9 @@ struct MenuView: View {
 enum Separador: String, CaseIterable, Identifiable {
     case hoje = "Hoje", entrada = "Entrada", semana = "Semana", cubo = "Cubo"
     var id: String { rawValue }
+    var titulo: String { self == .cubo && Edicao.semCubo ? "Definições" : rawValue }
     var icone: String {
-        switch self { case .hoje: "sun.max"; case .entrada: "tray.full"; case .semana: "chart.bar"; case .cubo: "cube" }
+        switch self { case .hoje: "sun.max"; case .entrada: "tray.full"; case .semana: "chart.bar"; case .cubo: Edicao.semCubo ? "gearshape" : "cube" }
     }
 }
 
@@ -135,7 +136,7 @@ struct JanelaPrincipal: View {
     var body: some View {
         NavigationSplitView {
             List(Separador.allCases, selection: $separador.v) { s in
-                Label(s.rawValue, systemImage: s.icone)
+                Label(s.titulo, systemImage: s.icone)
                     .badge(s == .entrada ? estado.porVer.count : s == .hoje ? agenda.tarefasHoje.count : 0)
                     .tag(s)
             }
@@ -167,6 +168,9 @@ struct JanelaPrincipal: View {
 struct EstadoCuboPill: View {
     @EnvironmentObject var estado: AppState
     var body: some View {
+        if !Edicao.semCubo { pilula }
+    }
+    private var pilula: some View {
         HStack(spacing: 6) {
             Circle().fill(estado.cuboOnline ? Color.green : Color.red).frame(width: 8, height: 8)
             Text(estado.cuboOnline ? (estado.estadoCubo?.cabo == true ? "Cubo ligado pelo cabo" : "Cubo ligado") : "Cubo desligado")

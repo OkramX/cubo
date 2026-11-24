@@ -5,7 +5,12 @@ import random
 from PIL import Image, ImageDraw, ImageFilter
 S = 1024
 
-def desenhar(ficheiro, fundo_azul=True, fechados=False):
+AMARELO = dict(topo=(255, 222, 70), direita=(214, 150, 22), cara=(245, 188, 35),
+               boca=(60, 35, 20), bochecha=(255, 140, 150), contorno=(90, 55, 10))
+ROSA_CUBO = dict(topo=(255, 190, 220), direita=(214, 92, 150), cara=(246, 140, 190),
+                 boca=(95, 25, 60), bochecha=(232, 70, 125), contorno=(110, 25, 70))
+
+def desenhar(ficheiro, fundo_azul=True, fechados=False, cores=AMARELO):
   global d
   img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
 
@@ -49,12 +54,12 @@ def desenhar(ficheiro, fundo_azul=True, fechados=False):
               d.polygon([p0, p1, p2, p3], fill=cor + (255,))
 
   # topo (mais claro)
-  face(add(F, (0, 0)), R, L, (255, 222, 70))
+  face(add(F, (0, 0)), R, L, cores["topo"])
   # face direita (mais escura)
-  face(F, R, D, (214, 150, 22))
+  face(F, R, D, cores["direita"])
 
   # face esquerda com a cara: i=0 junto à aresta da frente, j de cima para baixo
-  B, P, W, K, ROSA = (255,255,255), (35,30,40), (255,255,255), (60,35,20), (255,140,150)
+  B, P, W, K, ROSA = (255,255,255), (35,30,40), (255,255,255), cores["boca"], cores["bochecha"]
   cara = {}
   for (i0) in (1, 5):                    # olhos 2x3
       for di in range(2):
@@ -65,19 +70,19 @@ def desenhar(ficheiro, fundo_azul=True, fechados=False):
   if fechados:                                      # olhos fechados: só uma linha escura em baixo
       for i0 in (1, 5):
           for di in range(2):
-              cara[(i0 + di, 1)] = (245, 188, 35); cara[(i0 + di, 2)] = (245, 188, 35)   # pele (sem gastar aleatórios: a textura fica igual)
+              cara[(i0 + di, 1)] = cores["cara"]; cara[(i0 + di, 2)] = cores["cara"]   # pele (sem gastar aleatórios: a textura fica igual)
               cara[(i0 + di, 3)] = K
   for (i, j) in [(2, 2), (5, 2)]:                   # brilho fica branco (já é)
       pass
   cara[(2, 5)] = K; cara[(5, 5)] = K                 # sorriso
   cara[(3, 6)] = K; cara[(4, 6)] = K
   cara[(0, 4)] = ROSA; cara[(7, 4)] = ROSA           # bochechas
-  face(F, L, D, (245, 188, 35), cara)
+  face(F, L, D, cores["cara"], cara)
 
   # contorno escuro fino
   cont = [add(F, L), add(add(F, L), (0, 0)), add(add(F, L), R), add(F, R), add(add(F, R), D), add(F, D), add(add(F, L), D)]
   d.line([add(F, L), add(add(F, L), R), add(F, R), add(add(F, R), D), add(F, D), add(add(F, L), D), add(F, L)],
-         fill=(90, 55, 10, 255), width=8, joint="curve")
+         fill=cores["contorno"] + (255,), width=8, joint="curve")
   if not fundo_azul:
       img = img.crop(img.getbbox())
   img.save(ficheiro)
@@ -85,3 +90,10 @@ def desenhar(ficheiro, fundo_azul=True, fechados=False):
 desenhar("logo-1024.png")
 desenhar("mascote.png", fundo_azul=False)
 desenhar("mascote-piscar.png", fundo_azul=False, fechados=True)
+
+# Edição cor-de-rosa (versão sem cubo físico, ver construir-sem-cubo.sh)
+import os
+os.makedirs("rosa", exist_ok=True)
+desenhar("rosa/logo-1024.png", cores=ROSA_CUBO)
+desenhar("rosa/mascote.png", fundo_azul=False, cores=ROSA_CUBO)
+desenhar("rosa/mascote-piscar.png", fundo_azul=False, fechados=True, cores=ROSA_CUBO)

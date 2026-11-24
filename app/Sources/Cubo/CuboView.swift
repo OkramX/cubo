@@ -18,6 +18,7 @@ struct CuboView: View {
 
     var body: some View {
         Form {
+            if !Edicao.semCubo {
             Section("Estado") {
                 if let e = estado.estadoCubo {
                     LabeledContent("Ligação") { Label("Ligado", systemImage: "circle.fill").foregroundStyle(.green) }
@@ -132,6 +133,7 @@ struct CuboView: View {
                     }
                 }
             }
+            }
 
             Section {
                 HStack {
@@ -161,20 +163,24 @@ struct CuboView: View {
                     HoraMinutos(minutos: liga(\.resumoManhaMin))
                     Button("Agora") { Assistente.shared.fazerResumo() }.controlSize(.small)
                 }
+                if !Edicao.semCubo {
                 HStack {
                     Toggle("Contagem para o fim do dia", isOn: liga(\.fimDia))
                     Spacer()
                     HoraMinutos(minutos: liga(\.fimDiaMin))
                 }
+                }
+                if !Edicao.semCubo {
                 HStack {
                     Toggle("Lembrete do treino (1 h antes)", isOn: liga(\.lembreteTreino))
                     Spacer()
                     Text("treino às").foregroundStyle(.secondary)
                     HoraMinutos(minutos: liga(\.treinoMin))
                 }
+                }
                 Toggle("Relatório da semana (sexta às 17h)", isOn: liga(\.relatorioSemanal))
             } header: { Text("Assistente") } footer: {
-                Text("Reuniões: quando começa uma reunião do Calendário o cubo fica em silêncio e mostra «Em reunião»; no fim mostra o que entrou. Fim do dia: na última hora de trabalho (dias úteis) o cubo mostra um anel roxo. No notch podes perguntar (ex.: «o que me disse a Sara?») e ditar respostas com ⌃⌥V.")
+                Text(Edicao.semCubo ? "Reuniões: quando começa uma reunião do Calendário a Cubo fica em silêncio; no fim avisa o que entrou. No notch podes perguntar (ex.: «o que me disse a Sara?») e ditar respostas com ⌃⌥V." : "Reuniões: quando começa uma reunião do Calendário o cubo fica em silêncio e mostra «Em reunião»; no fim mostra o que entrou. Fim do dia: na última hora de trabalho (dias úteis) o cubo mostra um anel roxo. No notch podes perguntar (ex.: «o que me disse a Sara?») e ditar respostas com ⌃⌥V.")
             }
 
             Section {
@@ -189,6 +195,7 @@ struct CuboView: View {
                 Text("Quando chega um email (Mail ou eM Client) ou uma mensagem de WhatsApp, Teams ou Slack, o Claude escreve uma resposta e mostra-a no painel do notch. Nada é enviado sem carregares em «Enviar». Grupos de WhatsApp, newsletters e emails automáticos ficam de fora. O Claude vê a tua agenda para propor horas livres e sugere lembretes quando te pedem algo. No eM Client, Teams e Slack a resposta é copiada e a app abre para colares com ⌘V.")
             }
 
+            if !Edicao.semCubo {
             Section("O que aparece no cubo") {
                 Toggle("Remetente", isOn: liga(\.mostrarTitulo))
                 Toggle("Assunto", isOn: liga(\.mostrarSubtitulo))
@@ -198,6 +205,7 @@ struct CuboView: View {
                     Text("Não enviar").tag("ignorar")
                     Text("Mostrar").tag("mostrar")
                 }
+            }
             }
 
             Section {
@@ -216,9 +224,10 @@ struct CuboView: View {
             } header: {
                 Text("Apps")
             } footer: {
-                Text("As notificações destas apps aparecem na Entrada e no cubo. O número é quantas o Mac tem guardadas.")
+                Text(Edicao.semCubo ? "As notificações destas apps aparecem na Entrada. O número é quantas o Mac tem guardadas." : "As notificações destas apps aparecem na Entrada e no cubo. O número é quantas o Mac tem guardadas.")
             }
 
+            if !Edicao.semCubo {
             Section("Ligação") {
                 TextField("Endereço do cubo", text: $endereco.v)
                 HStack {
@@ -236,6 +245,7 @@ struct CuboView: View {
                 }
                 .disabled(endereco.v == estado.config.cuboURL && token.v == estado.config.token)
             }
+            }
 
             Section {
                 ForEach(estado.config.pessoasPrioritarias, id: \.self) { p in
@@ -252,7 +262,7 @@ struct CuboView: View {
                                 .foregroundStyle(ehVip ? Color.orange : .secondary)
                         }
                         .buttonStyle(.borderless)
-                        .help("VIP: som diferente e o cubo pisca com moldura vermelha")
+                        .help(Edicao.semCubo ? "VIP: som diferente" : "VIP: som diferente e o cubo pisca com moldura vermelha")
                         Button { estado.removerPessoa(p) } label: { Image(systemName: "minus.circle") }
                             .buttonStyle(.borderless)
                     }
@@ -278,7 +288,7 @@ struct CuboView: View {
             } header: {
                 Text("Concentração")
             } footer: {
-                Text("Durante a Concentração o cubo fica em silêncio, exceto para estas pessoas. Tudo continua a aparecer na Entrada. As marcadas como VIP (coroa) tocam um som diferente e o cubo pisca com uma moldura vermelha.")
+                Text(Edicao.semCubo ? "Durante a Concentração o som fica em silêncio, exceto para estas pessoas. Tudo continua a aparecer na Entrada. As marcadas como VIP (coroa) tocam um som diferente." : "Durante a Concentração o cubo fica em silêncio, exceto para estas pessoas. Tudo continua a aparecer na Entrada. As marcadas como VIP (coroa) tocam um som diferente e o cubo pisca com uma moldura vermelha.")
             }
 
             Section {
@@ -310,7 +320,7 @@ struct CuboView: View {
             } header: {
                 Text("Silêncio no Mac")
             } footer: {
-                Text("Com o Não incomodar ligado, o Mac deixa de mostrar avisos, mas o cubo e a Entrada continuam a receber tudo. Também funciona se o ligares pela Central de Controlo.")
+                Text(Edicao.semCubo ? "Com o Não incomodar ligado, o Mac deixa de mostrar avisos, mas a Entrada continua a receber tudo. Também funciona se o ligares pela Central de Controlo." : "Com o Não incomodar ligado, o Mac deixa de mostrar avisos, mas o cubo e a Entrada continuam a receber tudo. Também funciona se o ligares pela Central de Controlo.")
             }
 
             Section("Atalhos de teclado") {
@@ -328,15 +338,15 @@ struct CuboView: View {
             }
         }
         .formStyle(.grouped)
-        .navigationTitle("Cubo")
+        .navigationTitle(Edicao.semCubo ? "Definições" : "Cubo")
         .onAppear {
             endereco.v = estado.config.cuboURL
             token.v = estado.config.token
-            Task {
+            if !Edicao.semCubo { Task {
                 await estado.atualizarEstadoCubo()
                 endereco.v = estado.config.cuboURL
                 redes.v = await estado.cubo.redes()
-            }
+            } }
         }
     }
 

@@ -61,7 +61,7 @@ final class Assistente: ObservableObject {
 
         // 2) Lembrete de treino: uma hora antes da hora habitual do treino
         let treino = Extras.shared.treino
-        if cfg.lembreteTreino, !treino.isEmpty, !treino.lowercased().contains("descanso"),
+        if !Edicao.semCubo, cfg.lembreteTreino, !treino.isEmpty, !treino.lowercased().contains("descanso"),
            min >= cfg.treinoMin - 60, min < cfg.treinoMin, !feitoHoje("lembreteTreinoDia") {
             marcarHoje("lembreteTreinoDia")
             let h = String(format: "%02d:%02d", cfg.treinoMin / 60, cfg.treinoMin % 60)

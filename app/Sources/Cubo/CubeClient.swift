@@ -18,6 +18,7 @@ struct CubeClient {
 
     private func pedido(_ caminho: String, metodo: String = "POST", corpo: [String: Any]? = nil,
                         timeout: TimeInterval = 4) -> URLRequest? {
+        if Edicao.semCubo { return nil }
         guard let url = URL(string: base.trimmingCharacters(in: CharacterSet(charactersIn: "/ ")) + caminho)
         else { return nil }
         var r = URLRequest(url: url, timeoutInterval: timeout)
@@ -32,7 +33,7 @@ struct CubeClient {
 
     /// Tenta primeiro o cabo USB; "/brilho?valor=5" passa a {"valor":5}.
     private func peloCabo(_ caminho: String, corpo: [String: Any]?) async -> (Int, Data)? {
-        guard !CaboUSB.portas().isEmpty else { return nil }
+        guard !Edicao.semCubo, !CaboUSB.portas().isEmpty else { return nil }
         var c = corpo ?? [:]
         var so = caminho
         if let comp = URLComponents(string: caminho) {
@@ -62,6 +63,7 @@ struct CubeClient {
 
     /// Envia uma notificação com até 5 tentativas. Devolve false se o token for recusado ou o cubo não responder.
     func notificar(_ dados: [String: String], vip: Bool = false) async -> Bool {
+        if Edicao.semCubo { Edicao.avisoMac(dados); return true }
         var corpo: [String: Any] = dados
         if vip { corpo["vip"] = true }
         for tentativa in 1...5 {
