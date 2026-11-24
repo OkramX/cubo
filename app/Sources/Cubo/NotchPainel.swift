@@ -68,8 +68,8 @@ struct VistaNotch: View {
                     .fill(.black)
                     .shadow(color: .black.opacity(ab ? 0.45 : 0), radius: 18, y: 8)
 
-                // topo + rodapé ocupam ~150 pt; o meio desliza se não couber
-                MenuView(limiteMeio: max(200, n.alturaMax - n.notch.height - 170))
+                // topo + rodapé (Concentração, silêncio, botões) ocupam ~270 pt; o meio desliza se não couber
+                MenuView(limiteMeio: max(200, n.alturaMax - n.notch.height - 290))
                     .padding(.top, n.notch.height - 6)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(width: largura)

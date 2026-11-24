@@ -56,6 +56,9 @@ struct MenuView: View {
             .scrollIndicators(alturaMeio > limiteMeio ? .visible : .never)
             .frame(height: min(alturaMeio, limiteMeio))
 
+            // Sempre à vista, em baixo
+            ControloFoco()
+            ControloSilencioMac()
             Divider()
             HStack {
                 Button {
@@ -73,8 +76,6 @@ struct MenuView: View {
     private var meio: some View {
         VStack(alignment: .leading, spacing: 10) {
             PainelAssistente()
-            ControloFoco()
-            ControloSilencioMac()
             PainelRespostas()
             HStack {
                 EstadoCuboPill()
