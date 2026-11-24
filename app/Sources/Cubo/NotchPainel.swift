@@ -39,6 +39,7 @@ struct FormaNotch: Shape {
 final class EstadoNotch: ObservableObject {
     @Published var aberto = false
     @Published var notch = CGSize(width: 185, height: 32)
+    @Published var alturaMax: CGFloat = 760
     var fechar: () -> Void = {}
 }
 
@@ -67,7 +68,8 @@ struct VistaNotch: View {
                     .fill(.black)
                     .shadow(color: .black.opacity(ab ? 0.45 : 0), radius: 18, y: 8)
 
-                MenuView()
+                // topo + rodapé ocupam ~150 pt; o meio desliza se não couber
+                MenuView(limiteMeio: max(200, n.alturaMax - n.notch.height - 170))
                     .padding(.top, n.notch.height - 6)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(width: largura)
@@ -116,7 +118,7 @@ final class ControladorNotch: NSObject {
     private var subs = Set<AnyCancellable>()
     private var fecho: DispatchWorkItem?
 
-    private let tamanho = NSSize(width: 520, height: 760)
+    private var tamanho = NSSize(width: 520, height: 760)
 
     init(estado: AppState, agenda: Agenda) {
         self.estado = estado
@@ -214,6 +216,10 @@ final class ControladorNotch: NSObject {
         fecho?.cancel()
         let s = ecra
         n.notch = medirNotch(s)
+        // O painel nunca passa do fundo do ecrã (deixa 40 pt de margem)
+        tamanho.height = max(400, s.frame.height - 40)
+        n.alturaMax = tamanho.height - 30
+        painel.contentView?.frame = .init(origin: .zero, size: tamanho)
         let f = s.frame
         painel.setFrame(.init(x: f.midX - tamanho.width / 2, y: f.maxY - tamanho.height,
                               width: tamanho.width, height: tamanho.height), display: true)

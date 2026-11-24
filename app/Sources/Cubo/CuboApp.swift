@@ -42,10 +42,36 @@ struct MenuView: View {
     @EnvironmentObject var estado: AppState
     @EnvironmentObject var agenda: Agenda
     @Environment(\.openWindow) private var abrirJanela
+    /// Altura máxima da parte do meio (o resto desliza); vem do tamanho do ecrã
+    var limiteMeio: CGFloat = .infinity
+    @State private var alturaMeio: CGFloat = 200
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             ResumoDia()
+            ScrollView(.vertical) {
+                meio
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { alturaMeio = $0 }
+            }
+            .scrollIndicators(alturaMeio > limiteMeio ? .visible : .never)
+            .frame(height: min(alturaMeio, limiteMeio))
+
+            Divider()
+            HStack {
+                Button {
+                    estado.abrirJanela?()
+                } label: { Label("Abrir Cubo", systemImage: "macwindow") }
+                Spacer()
+                Button("Sair") { NSApp.terminate(nil) }
+            }
+            .buttonStyle(.borderless)
+        }
+        .padding(12)
+        .frame(width: 360)
+    }
+
+    private var meio: some View {
+        VStack(alignment: .leading, spacing: 10) {
             PainelAssistente()
             ControloFoco()
             ControloSilencioMac()
@@ -79,19 +105,8 @@ struct MenuView: View {
                     Text("e mais \(estado.porVer.count - 6)…").font(.caption).foregroundStyle(.secondary)
                 }
             }
-
-            Divider()
-            HStack {
-                Button {
-                    estado.abrirJanela?()
-                } label: { Label("Abrir Cubo", systemImage: "macwindow") }
-                Spacer()
-                Button("Sair") { NSApp.terminate(nil) }
-            }
-            .buttonStyle(.borderless)
         }
-        .padding(12)
-        .frame(width: 360)
+        .frame(width: 336, alignment: .leading)
     }
 }
 
