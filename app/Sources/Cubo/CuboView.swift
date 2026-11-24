@@ -140,8 +140,17 @@ struct CuboView: View {
                     Button("Ouvir") { Som.tocar() }
                 }
                 Toggle("Lembrar uma pausa a cada 50 min ao computador", isOn: liga(\.pausa))
+                HStack {
+                    Toggle("Cubo a saltar no canto do ecrã", isOn: liga(\.mascote))
+                    Spacer()
+                    Picker("", selection: liga(\.mascoteMin)) {
+                        ForEach([2, 5, 10, 15, 30, 60], id: \.self) { Text("a cada \($0) min").tag($0) }
+                    }
+                    .labelsHidden().fixedSize()
+                    Button("Ver agora") { Mascote.shared.mostrar() }.controlSize(.small)
+                }
             } header: { Text("Som e pausas") } footer: {
-                Text("Toca mesmo com o Mac em silêncio. Durante a Concentração só toca para as pessoas prioritárias.")
+                Text("Toca mesmo com o Mac em silêncio. Durante a Concentração só toca para as pessoas prioritárias, e o cubo do canto não aparece.")
             }
 
             Section {

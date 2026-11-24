@@ -134,6 +134,15 @@ struct CuboConfig {
         get { raw["relatorio_semanal"] as? Bool ?? true }
         set { raw["relatorio_semanal"] = newValue }
     }
+    /// Mascote a saltar no canto do ecrã
+    var mascote: Bool {
+        get { raw["mascote"] as? Bool ?? true }
+        set { raw["mascote"] = newValue }
+    }
+    var mascoteMin: Int {
+        get { (raw["mascote_min"] as? NSNumber)?.intValue ?? 5 }
+        set { raw["mascote_min"] = newValue }
+    }
     var codigos: String {
         get { raw["codigos_verificacao"] as? String ?? "esconder" }
         set { raw["codigos_verificacao"] = newValue }

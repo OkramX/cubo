@@ -27,6 +27,12 @@ extension Delegado {
         a.fimDia = { e.config.fimDia ? e.config.fimDiaMin : nil }
         e.eventosAgora = { a.eventos }
         Assistente.shared.ligar(estado: e, agenda: a)
+        Mascote.shared.podeAparecer = { e.config.mascote && !e.emFoco }
+        Mascote.shared.minutos = { Double(max(1, e.config.mascoteMin)) }
+        Mascote.shared.iniciar()
+        if CommandLine.arguments.contains("--mascote-agora") {     // para testar a animação
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { Mascote.shared.mostrar() }
+        }
         Extras.shared.aoMudar = { a.enviarResumo() }
         Pausa.shared.podeAvisar = { e.config.pausa && !e.emFoco }
         Pausa.shared.enviar = { dados in let c = e.cubo; Task { await c.notificar(dados) } }

@@ -14,6 +14,7 @@ cp .build/release/Cubo "$APP/Contents/MacOS/Cubo"
 cp Recursos/Info.plist "$APP/Contents/Info.plist"
 iconutil -c icns "$IS" -o "$APP/Contents/Resources/Cubo.icns"
 cp Recursos/chegou.wav "$APP/Contents/Resources/chegou.wav"
+cp Recursos/mascote.png Recursos/mascote-piscar.png "$APP/Contents/Resources/"
 # Assinatura fixa (porta-chaves local em Assinatura/, fora do git): assim o macOS
 # lembra-se das autorizações (Acesso Total ao Disco, Acessibilidade) entre atualizações.
 KC="$PWD/Assinatura/cubo.keychain-db"
