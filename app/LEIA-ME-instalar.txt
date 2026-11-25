@@ -1,0 +1,31 @@
+CUBO — como instalar (versão sem cubo)
+
+Escolhe a cor: «Cubo rosa.zip» ou «Cubo amarelo.zip». Funcionam igual.
+
+1. Abre o .zip (duplo clique) e arrasta a Cubo.app para a pasta Aplicações.
+   (Se pedir para substituir uma versão antiga, diz que sim.)
+
+2. Primeira vez: clica na Cubo com o botão direito > Abrir > Abrir.
+   Se o Mac não deixar, vai a Definições do Sistema > Privacidade e segurança,
+   desce até ao fim e carrega em «Abrir mesmo assim».
+
+3. Aparece um cubinho na barra de cima. Dá as autorizações que a app pede:
+   - Acesso Total ao Disco (Definições > Privacidade e segurança):
+     é assim que a app lê as notificações. Depois fecha e volta a abrir a Cubo.
+   - Calendário e Lembretes, para a agenda e as tarefas.
+   - Notificações, para os avisos (bom dia, pausa, fim da reunião).
+   - Acessibilidade (só se quiseres enviar respostas no WhatsApp sem o abrir).
+   - Controlo do Mail (quando enviares a primeira resposta por email).
+
+4. Abre a Cubo > Definições:
+   - Em «Respostas sugeridas», escreve quem és e como costumas responder.
+   - Em «Mac», liga «Abrir a Cubo ao iniciar sessão».
+
+5. Respostas sugeridas, resumo da manhã e perguntas usam o Claude:
+   é preciso ter o Claude Code instalado e com sessão iniciada neste Mac.
+   Sem isso, o resto da app funciona na mesma.
+
+Tudo fica só neste Mac: a app lê apenas as notificações, emails e WhatsApp de quem
+a usa aqui. Nada é enviado a ninguém sem carregares em «Enviar».
+
+Atalhos: ⌃⌥C abre a Cubo · ⌃⌥F Concentração · ⌃⌥V ditar uma resposta.
