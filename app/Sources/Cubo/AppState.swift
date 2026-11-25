@@ -53,6 +53,7 @@ final class AppState: ObservableObject {
     // Encontrar o cubo em qualquer rede
     @Published var aProcurarCubo = false
     private var ultimaProcura = Date.distantPast
+    private var redesConhecidas: [String] = []
     private let monitorRede = NWPathMonitor()
 
     private let bd = NotificationDB()
@@ -90,8 +91,13 @@ final class AppState: ObservableObject {
             guard caminho.status == .satisfied else { return }
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 4_000_000_000)
-                self?.ultimaProcura = .distantPast
-                await self?.atualizarEstadoCubo()
+                // O macOS avisa de "mudanças" muitas vezes sem a rede mudar: só volta a
+                // procurar se o Mac estiver mesmo noutra rede.
+                let redes = Self.redesLocais()
+                guard let self, redes != self.redesConhecidas else { return }
+                self.redesConhecidas = redes
+                self.ultimaProcura = .distantPast
+                await self.atualizarEstadoCubo()
             }
         }
         monitorRede.start(queue: .main)
@@ -218,7 +224,10 @@ final class AppState: ObservableObject {
 
     var macEmSilencio: Bool { modoFocoMac != nil }
 
-    func lerSilencioMac() { modoFocoMac = SilencioMac.modoAtivo() }
+    func lerSilencioMac() {
+        let m = SilencioMac.modoAtivo()
+        if m != modoFocoMac { modoFocoMac = m }
+    }
 
     func verificarAtalhosSilencio() {
         Task.detached {
@@ -370,11 +379,13 @@ final class AppState: ObservableObject {
     func atualizarEstadoCubo() async {
         if Edicao.semCubo { return }
         var e = await cubo.estado()
-        if e == nil, Date().timeIntervalSince(ultimaProcura) > 300 {   // procura na rede no máximo a cada 5 min
+        // Procurar em toda a rede gasta energia: só ao arrancar, quando o Mac muda de rede ou a pedido
+        if e == nil, ultimaProcura == .distantPast {
             e = await procurarCubo()
         }
-        estadoCubo = e
-        cuboOnline = e != nil
+        // Só avisa a interface quando muda (senão redesenha tudo a cada 10 s)
+        if e != nil || estadoCubo != nil { estadoCubo = e }
+        if cuboOnline != (e != nil) { cuboOnline = e != nil }
     }
 
     /// Procura o cubo pelo nome cubo.local e, se falhar, em todos os endereços da rede atual.
@@ -469,7 +480,16 @@ final class AppState: ObservableObject {
         gravarConfig()
     }
 
+    private static var nomesCache: [String: String] = [:]
+
     static func nomeDaApp(_ bundle: String) -> String {
+        if let n = nomesCache[bundle] { return n }
+        let n = nomeDaAppSemCache(bundle)
+        nomesCache[bundle] = n
+        return n
+    }
+
+    private static func nomeDaAppSemCache(_ bundle: String) -> String {
         if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle) {
             let n = FileManager.default.displayName(atPath: url.path).replacingOccurrences(of: ".app", with: "")
             // nomes iguais aos do firmware, para o cubo encontrar o ícone
@@ -493,14 +513,27 @@ final class AppState: ObservableObject {
 
     static let rotuloScript = "pt.cubo.notificacoes"
 
+    private var ultimaVerificacaoScript = Date.distantPast
+
+    /// Vê se o script antigo ainda corre. Lançar o launchctl custa energia: no máximo a cada 5 min, fora da linha principal.
     func verificarScriptAntigo() {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-        p.arguments = ["print", "gui/\(getuid())/\(Self.rotuloScript)"]
-        p.standardOutput = FileHandle.nullDevice
-        p.standardError = FileHandle.nullDevice
-        do { try p.run(); p.waitUntilExit(); scriptAntigoAtivo = p.terminationStatus == 0 }
-        catch { scriptAntigoAtivo = false }
+        guard Date().timeIntervalSince(ultimaVerificacaoScript) >= 300 else { return }
+        ultimaVerificacaoScript = Date()
+        let rotulo = "gui/\(getuid())/\(Self.rotuloScript)"
+        Task.detached {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+            p.arguments = ["print", rotulo]
+            p.standardOutput = FileHandle.nullDevice
+            p.standardError = FileHandle.nullDevice
+            let ativo: Bool = {
+                guard (try? p.run()) != nil else { return false }
+                p.waitUntilExit(); return p.terminationStatus == 0
+            }()
+            await MainActor.run { [weak self] in
+                if self?.scriptAntigoAtivo != ativo { self?.scriptAntigoAtivo = ativo }
+            }
+        }
     }
 
     // MARK: Abrir ao iniciar sessão
