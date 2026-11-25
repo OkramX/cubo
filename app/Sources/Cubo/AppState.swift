@@ -370,7 +370,7 @@ final class AppState: ObservableObject {
     func atualizarEstadoCubo() async {
         if Edicao.semCubo { return }
         var e = await cubo.estado()
-        if e == nil, Date().timeIntervalSince(ultimaProcura) > 60 {
+        if e == nil, Date().timeIntervalSince(ultimaProcura) > 300 {   // procura na rede no máximo a cada 5 min
             e = await procurarCubo()
         }
         estadoCubo = e
@@ -384,7 +384,12 @@ final class AppState: ObservableObject {
         aProcurarCubo = true
         defer { aProcurarCubo = false }
         let token = config.token
-        if let e = await CubeClient(base: "http://cubo.local", token: token).estado(timeout: 3, porCabo: false) {
+        // sessão só para esta procura, deitada fora no fim (ver CubeClient.sessao)
+        let cfgSessao = URLSessionConfiguration.ephemeral
+        cfgSessao.httpMaximumConnectionsPerHost = 1
+        let sessao = URLSession(configuration: cfgSessao)
+        defer { sessao.invalidateAndCancel() }
+        if let e = await CubeClient(base: "http://cubo.local", token: token, sessao: sessao).estado(timeout: 3, porCabo: false) {
             guardarEnderecoCubo(e.ip)
             return e
         }
@@ -395,7 +400,7 @@ final class AppState: ObservableObject {
                     guard proximo <= 254 else { return }
                     let ip = "\(prefixo).\(proximo)"
                     proximo += 1
-                    g.addTask { await CubeClient(base: "http://\(ip)", token: token).estado(timeout: 1.2, porCabo: false) }
+                    g.addTask { await CubeClient(base: "http://\(ip)", token: token, sessao: sessao).estado(timeout: 1.2, porCabo: false) }
                 }
                 for _ in 0..<48 { lancar() }
                 while let r = await g.next() {

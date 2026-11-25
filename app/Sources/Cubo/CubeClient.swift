@@ -15,6 +15,17 @@ struct EstadoCubo: Decodable {
 struct CubeClient {
     let base: String
     let token: String
+    /// Sessão própria (não a URLSession.shared): a procura na rede usa uma sessão temporária
+    /// que é deitada fora no fim, senão a cache de ligações do macOS cresce sem parar e
+    /// a app fica a gastar 100% de CPU quando o cubo está desligado.
+    var sessao: URLSession = CubeClient.sessaoNormal
+
+    static let sessaoNormal: URLSession = {
+        let c = URLSessionConfiguration.ephemeral
+        c.httpMaximumConnectionsPerHost = 2
+        c.timeoutIntervalForResource = 15
+        return URLSession(configuration: c)
+    }()
 
     private func pedido(_ caminho: String, metodo: String = "POST", corpo: [String: Any]? = nil,
                         timeout: TimeInterval = 4) -> URLRequest? {
@@ -48,7 +59,7 @@ struct CubeClient {
         if let r = await peloCabo(caminho, corpo: corpo ?? [:]) { return r.0 }
         guard let r = pedido(caminho, corpo: corpo) else { return -1 }
         do {
-            let (_, resp) = try await URLSession.shared.data(for: r)
+            let (_, resp) = try await sessao.data(for: r)
             return (resp as? HTTPURLResponse)?.statusCode ?? -1
         } catch { return -1 }
     }
@@ -57,7 +68,7 @@ struct CubeClient {
         if porCabo, let (c, d) = await peloCabo("/estado", corpo: nil), c == 200,
            let e = try? JSONDecoder().decode(EstadoCubo.self, from: d) { return e }
         guard let r = pedido("/estado", metodo: "GET", timeout: timeout),
-              let (d, _) = try? await URLSession.shared.data(for: r) else { return nil }
+              let (d, _) = try? await sessao.data(for: r) else { return nil }
         return try? JSONDecoder().decode(EstadoCubo.self, from: d)
     }
 
@@ -80,7 +91,7 @@ struct CubeClient {
     struct Redes: Decodable { let redes: [String]; let atual: String; let max: Int }
 
     private func pedirRedes(_ r: URLRequest?) async -> Redes? {
-        guard let r, let (d, resp) = try? await URLSession.shared.data(for: r),
+        guard let r, let (d, resp) = try? await sessao.data(for: r),
               (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
         return try? JSONDecoder().decode(Redes.self, from: d)
     }
