@@ -17,8 +17,8 @@ enum Edicao {
         centro.requestAuthorization(options: [.alert, .sound]) { ok, _ in
             guard ok else { return }
             let c = UNMutableNotificationContent()
-            c.title = dados["titulo"] ?? "Cubo"
-            c.body = dados["texto"] ?? ""
+            c.title = dados["titulo_mac"] ?? dados["titulo"] ?? "Cubo"
+            c.body = dados["texto_mac"] ?? dados["texto"] ?? ""
             centro.add(UNNotificationRequest(identifier: UUID().uuidString, content: c, trigger: nil))
         }
     }
