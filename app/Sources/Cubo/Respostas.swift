@@ -374,7 +374,7 @@ enum WhatsAppBD {
         .appendingPathComponent("Library/Group Containers/group.net.whatsapp.WhatsApp.shared")
 
     /// Abre uma cópia de uma base de dados do WhatsApp (assim a app não é tocada nem há vistos).
-    private static func comCopia<T>(_ nome: String, _ falha: T, _ corpo: (OpaquePointer?) -> T) -> T {
+    static func comCopia<T>(_ nome: String, _ falha: T, _ corpo: (OpaquePointer?) -> T) -> T {
         let fm = FileManager.default
         let tmp = fm.temporaryDirectory.appendingPathComponent("cubo-wa-\(UUID().uuidString)")
         defer { try? fm.removeItem(at: tmp) }

@@ -27,6 +27,7 @@ extension Delegado {
         a.fimDia = { e.config.fimDia ? e.config.fimDiaMin : nil }
         e.eventosAgora = { a.eventos }
         Assistente.shared.ligar(estado: e, agenda: a)
+        Grupos.shared.ligar(estado: e)
         Mascote.shared.podeAparecer = { e.config.mascote && !e.emFoco }
         Mascote.shared.minutos = { Double(max(1, e.config.mascoteMin)) }
         Mascote.shared.iniciar()
@@ -82,6 +83,7 @@ struct MenuView: View {
     private var meio: some View {
         VStack(alignment: .leading, spacing: 10) {
             PainelAssistente()
+            PainelGrupos()
             PainelRespostas()
             HStack {
                 EstadoCuboPill()

@@ -262,6 +262,8 @@ final class Delegado: NSObject, NSApplicationDelegate {
         TesteRespostas.correrSePedido()
         TesteCaixa.correrSePedido()
         TesteAssistente.correrSePedido(estado)
+        TesteGrupos.correrSePedido()
+        if CommandLine.arguments.contains("--testar-grupo") { return }
         if CommandLine.arguments.contains("--testar-assistente") { return }
         notch = ControladorNotch(estado: estado, agenda: agenda)
         ligar()

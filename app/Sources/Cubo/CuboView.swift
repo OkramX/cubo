@@ -195,6 +195,8 @@ struct CuboView: View {
                 Text("Quando chega um email (Mail ou eM Client) ou uma mensagem de WhatsApp, Teams ou Slack, o Claude escreve uma resposta e mostra-a no painel do notch. Nada é enviado sem carregares em «Enviar». Grupos de WhatsApp, newsletters e emails automáticos ficam de fora. O Claude vê a tua agenda para propor horas livres e sugere lembretes quando te pedem algo. No eM Client, Teams e Slack a resposta é copiada e a app abre para colares com ⌘V.")
             }
 
+            SeccaoGrupos()
+
             if !Edicao.semCubo {
             Section("O que aparece no cubo") {
                 Toggle("Remetente", isOn: liga(\.mostrarTitulo))

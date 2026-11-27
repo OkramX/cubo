@@ -143,6 +143,33 @@ struct CuboConfig {
         get { (raw["mascote_min"] as? NSNumber)?.intValue ?? 5 }
         set { raw["mascote_min"] = newValue }
     }
+    /// Resumos de grupos do WhatsApp: grupos escolhidos (jid → nome)
+    var gruposResumo: [String: String] {
+        get { raw["grupos_resumo"] as? [String: String] ?? [:] }
+        set { raw["grupos_resumo"] = newValue }
+    }
+    /// Resumir quando a conversa acalma (X min sem mensagens e pelo menos N mensagens novas)
+    var gruposAcalma: Bool {
+        get { raw["grupos_acalma"] as? Bool ?? true }
+        set { raw["grupos_acalma"] = newValue }
+    }
+    var gruposAcalmaMin: Int {
+        get { (raw["grupos_acalma_min"] as? NSNumber)?.intValue ?? 10 }
+        set { raw["grupos_acalma_min"] = newValue }
+    }
+    var gruposMinMensagens: Int {
+        get { (raw["grupos_min_mensagens"] as? NSNumber)?.intValue ?? 5 }
+        set { raw["grupos_min_mensagens"] = newValue }
+    }
+    /// Resumir também a horas certas (minutos desde a meia-noite)
+    var gruposHoras: Bool {
+        get { raw["grupos_horas"] as? Bool ?? false }
+        set { raw["grupos_horas"] = newValue }
+    }
+    var gruposHorasLista: [Int] {
+        get { (raw["grupos_horas_lista"] as? [NSNumber])?.map(\.intValue) ?? [780, 1140] }
+        set { raw["grupos_horas_lista"] = newValue }
+    }
     var codigos: String {
         get { raw["codigos_verificacao"] as? String ?? "esconder" }
         set { raw["codigos_verificacao"] = newValue }
